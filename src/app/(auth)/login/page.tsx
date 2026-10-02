@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Dumbbell } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </CardHeader>
           <CardContent>
             <LoginForm callbackUrl={safeRedirectPath(callbackUrl, "/")} />
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              New to FitCRM?{" "}
+              <Link href="/signup" className="font-medium text-primary underline-offset-4 hover:underline">
+                Start a free trial
+              </Link>
+            </p>
           </CardContent>
         </Card>
       </section>

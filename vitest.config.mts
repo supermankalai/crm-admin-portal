@@ -25,7 +25,7 @@ export default defineConfig({
           name: "integration",
           include: ["tests/integration/**/*.test.ts"],
           environment: "node",
-          setupFiles: ["tests/support/load-env.ts"],
+          setupFiles: ["tests/support/load-env.ts", "tests/support/use-test-database.ts"],
           globalSetup: ["tests/support/integration-global-setup.ts"],
           // One database: run files sequentially.
           fileParallelism: false,

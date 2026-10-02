@@ -14,6 +14,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // E2E tests run their own dev server with a separate build dir, so they can run while
+  // `npm run dev` is also running.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   serverExternalPackages: ["@node-rs/argon2", "pg"],
   async headers() {

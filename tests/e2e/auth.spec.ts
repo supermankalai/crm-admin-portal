@@ -33,19 +33,19 @@ test("rejects an unknown email with the same message (no account enumeration)", 
   await expect(page.locator("form").getByRole("alert")).toHaveText("Invalid email or password.");
 });
 
-test("a gym owner signs in, sees their gym, and signs out", async ({ page, context }) => {
+test("a single-gym owner signs in straight to their gym, and signs out", async ({ page, context }) => {
   await login(page, "owner@irontemple.example", STAFF_PASSWORD);
-  await expect(page).toHaveURL(/\/select-gym/);
-  await expect(page.getByRole("link", { name: /Iron Temple Fitness/ })).toBeVisible();
-  await expect(page.getByText("Owner", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/g\/iron-temple\/dashboard/, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: /Welcome back/ })).toBeVisible();
 
   const cookie = (await context.cookies()).find((c) => c.name.includes("authjs.session-token"));
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe("Lax");
 
-  await page.getByRole("button", { name: "Log out" }).click();
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Log out" }).click();
   await expect(page).toHaveURL(/\/login/);
-  await page.goto("/select-gym");
+  await page.goto("/g/iron-temple/dashboard");
   await expect(page).toHaveURL(/\/login/);
 });
 

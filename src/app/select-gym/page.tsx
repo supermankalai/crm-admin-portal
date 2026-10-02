@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, ChevronRight, LogOut, ShieldCheck } from "lucide-react";
+import { Building2, ChevronRight, LogOut, Plus, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ROLE_LABELS } from "@/domain/permissions";
 import { requireUser } from "@/server/auth/session";
 import { listMyGyms } from "@/server/services/my-gyms";
 import { logoutAction } from "../(auth)/actions";
 
 export const metadata: Metadata = { title: "Choose a gym" };
 
-const ROLE_LABEL = { OWNER: "Owner", MANAGER: "Manager", FRONT_DESK: "Front desk", TRAINER: "Trainer" } as const;
 
 export default async function SelectGymPage() {
   const user = await requireUser();
@@ -67,12 +67,19 @@ export default async function SelectGymPage() {
                   <span className="block font-medium">{gym.name}</span>
                   <span className="block text-xs text-muted-foreground">/g/{gym.slug}</span>
                 </span>
-                <Badge variant="secondary">{ROLE_LABEL[role]}</Badge>
+                <Badge variant="secondary">{ROLE_LABELS[role]}</Badge>
                 <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
               </Link>
             ))}
           </CardContent>
         )}
+        <CardContent>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/signup">
+              <Plus aria-hidden /> Create a new gym
+            </Link>
+          </Button>
+        </CardContent>
       </Card>
     </main>
   );

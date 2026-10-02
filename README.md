@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: Phase 1 of 8 complete.** Done so far: project setup, env validation, database roles, migrations, RLS, encryption, seed and login. The gym area (`/g/[gymSlug]/…`) arrives in Phase 2. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> **Build status: Phase 2 of 8 complete.** Done so far: database roles, RLS, encryption, seed, login (Phase 1), plus the multi-tenant layer, gym sign-up with a 14-day trial, gym switching, roles and the gym layout (Phase 2). Members, plans, payments and the other gym features follow in Phases 3–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -86,6 +86,21 @@ To create a new migration: `npx prisma migrate dev --name <change> --create-only
 4. **Structural isolation.** Child rows reference parents by `(gymId, parentId)`, so a cross-gym reference is impossible even for the owner role.
 5. **Lint guard.** Features can't import the raw Prisma client (`eslint no-restricted-imports`). They must use `withTenant`, `withUser` or `withPlatformAdmin`.
 
+## 4a. Tenancy in the application
+
+Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms you mean. It is never trusted on its own.
+
+- **Pages and layouts** call `requireGymAccess(slug)` ([src/server/tenant](src/server/tenant)). It re-reads the session user from the database, then checks they are **active staff** of the gym with that slug, and builds a `TenantContext`: gym, role, permissions, plan, and subscription access. Anyone else gets a **404**, so other gyms' slugs can't be probed. A super admin without a staff role also gets a 404; support access arrives in Phase 3.
+- **Server actions** are wrapped in `gymAction()` ([src/server/actions/gym-action.ts](src/server/actions/gym-action.ts)). It runs the same tenant check, then the permission check (`assertCan`) and the read-only check for writes (`assertWritable`), then Zod validation with the shared schema. Failures come back as friendly messages and are logged on the server.
+- **API routes** do the same check. For example, `GET /api/g/<slug>/context` returns 401 without a session and 404 for other gyms.
+- **Database access** goes through `inTenant(ctx, tx => …)`. It sets the RLS context from the verified `TenantContext`, never from request input.
+- **Roles and permissions** are a single matrix in [src/domain/permissions.ts](src/domain/permissions.ts) (Owner, Manager, Front desk, Trainer). Navigation is filtered by it, and each page and action checks it again.
+- **Read-only mode** applies when a trial or subscription ends or the gym is suspended. A banner is shown, every write is refused, and the data is kept. It's computed from dates on each request, so it works even if no background job runs.
+
+**Sign-up** (`/signup`): gym details → owner account → plan, which starts a **14-day trial**. A signed-in user can add another gym and becomes its owner. Sign-up goes through the `signup_create_gym` database function: one transaction creates the gym, owner, trial, subscription history, default location and opening hours, counters and audit rows. Sign-up is rate-limited to 5 per hour per IP.
+
+**Gym switching:** use the gym menu at the top of the sidebar, or `/select-gym`. A user with exactly one gym goes straight to its dashboard after login.
+
 ## 5. Encryption
 
 Fields encrypted at the application level with **AES-256-GCM** ([src/server/crypto](src/server/crypto)):
@@ -155,7 +170,7 @@ Each gym also gets:
 | `npm test` | Unit and integration tests (Vitest) |
 | `npm run test:unit` | Business rules, encryption, env validation, password hashing, redaction |
 | `npm run test:integration` | RLS and tenant isolation against a real PostgreSQL (`gym_saas_test`), through the restricted `gym_app` role |
-| `npm run test:e2e` | Playwright against `next dev` on port 3100, using `gym_saas_test` reset and seeded per run |
+| `npm run test:e2e` | Playwright against `next dev` on port 3100 (its own `.next-e2e` build directory, so it can run alongside `npm run dev`), using `gym_saas_test` reset and seeded per run |
 
 The test databases are rebuilt from migrations on every run. The suites refuse any database whose name doesn't end in `_test`, so your dev data is never touched. First time only: `npx playwright install chromium`.
 
@@ -187,9 +202,9 @@ Notes:
 ```
 prisma/              schema, migrations (incl. RLS), sql/ role + grants, seed/
 scripts/             db.ts (roles/migrate/reset), generate-keys.ts, crypto-rotate.ts
-src/app/             routes: (auth)/login, select-gym, api/auth
+src/app/             routes: (auth)/login + signup, select-gym, g/[gymSlug]/…, api/
 src/server/          server-only code: env, db (RLS context), auth, crypto, security, audit, services
-src/domain/          pure business rules (money, phone normalisation, …)
+src/domain/          pure business rules (permissions, subscription access, money, slugs, …)
 src/lib/             client-safe helpers and shared Zod schemas
 src/components/      shadcn/ui and layout components
 tests/               unit/, integration/ (real Postgres), e2e/ (Playwright), support/

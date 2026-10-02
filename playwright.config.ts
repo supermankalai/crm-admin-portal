@@ -32,6 +32,7 @@ export default defineConfig({
     timeout: 180_000,
     env: {
       APP_URL: baseURL,
+      NEXT_DIST_DIR: ".next-e2e",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       MIGRATION_DATABASE_URL: process.env.TEST_MIGRATION_DATABASE_URL ?? "",
     },
