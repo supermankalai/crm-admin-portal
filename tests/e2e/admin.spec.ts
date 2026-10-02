@@ -116,8 +116,12 @@ test.describe("subscriptions and read-only mode", () => {
     try {
       await loginAndLand(page, "owner@zenstrength.example", /\/g\/zen-strength\/dashboard/);
       await expect(page.getByRole("status").filter({ hasText: "Read-only mode" })).toContainText("Your free trial has ended");
-      await expect(page.getByText("Read-only", { exact: true })).toBeVisible();
-      await expect(page.locator("main").getByText("120")).toBeVisible(); // members are still there
+      // Data is still there, but nothing can be added.
+      await page.goto("/g/zen-strength/members");
+      await expect(page.locator("table tbody tr").first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Add member" })).toHaveCount(0);
+      expect((await page.goto("/g/zen-strength/members/new"))?.status()).toBe(200);
+      await expect(page.getByRole("heading", { name: /while the gym is read-only/ })).toBeVisible();
     } finally {
       await shift("restore");
     }

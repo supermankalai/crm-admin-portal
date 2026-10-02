@@ -1,4 +1,5 @@
 import { getEnv } from "@/server/env";
+import { logger } from "@/server/logger";
 import { normalisePhone } from "@/domain/phone";
 import { blindIndexWith, type BlindIndexKey } from "./blind-index";
 import { decryptWith, encryptWith, needsRotation, type FieldContext, type Keyring } from "./field-encryption";
@@ -58,4 +59,19 @@ export function isStale(stored: string): boolean {
 export function phoneBlindIndex(gymId: string, rawPhone: string | null | undefined): string | null {
   const normalised = rawPhone ? normalisePhone(rawPhone) : null;
   return normalised ? blindIndexWith(getBlindKey(), gymId, "phone", normalised) : null;
+}
+
+/**
+ * For display paths: a single unreadable value (corrupted, or encrypted with a key that is no
+ * longer loaded) must not take the whole page down. Logs the failure (never the value) and
+ * returns null; callers show a placeholder.
+ */
+export function tryDecrypt(stored: string | null | undefined, context: FieldContext): string | null {
+  if (!stored) return null;
+  try {
+    return decryptField(stored, context);
+  } catch (error) {
+    logger.error("field decryption failed", { model: context.model, field: context.field, recordId: context.recordId, gymId: context.gymId, error: (error as Error).message });
+    return null;
+  }
 }

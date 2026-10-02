@@ -39,3 +39,23 @@ export function formatMoney(amountMinor: number, currency: string, locale = "en-
   const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
   return formatter.format(amountMinor / 10 ** digits);
 }
+
+/**
+ * Parse a user-entered major-unit amount ("2,500", "2500.5", "₹ 1,999.00") into minor units
+ * exactly, without floating point. Returns null for invalid input or more than 2 decimals.
+ */
+export function parseMajorToMinor(input: string, fractionDigits = 2): number | null {
+  const cleaned = input.replace(/[\s,₹$€£]/g, "").replace(/^(INR|USD|EUR|GBP|AED|SGD|AUD)/i, "");
+  const match = /^(\d{1,9})(?:\.(\d+))?$/.exec(cleaned);
+  if (!match) return null;
+  const [, whole, fraction = ""] = match;
+  if (fraction.length > fractionDigits) return null;
+  return Number(whole) * 10 ** fractionDigits + Number(fraction.padEnd(fractionDigits, "0") || "0");
+}
+
+/** Minor units → plain major-unit string for form fields ("250000" → "2500", "250050" → "2500.50"). */
+export function minorToMajorInput(amountMinor: number, fractionDigits = 2): string {
+  const whole = Math.floor(amountMinor / 10 ** fractionDigits);
+  const fraction = amountMinor % 10 ** fractionDigits;
+  return fraction ? `${whole}.${String(fraction).padStart(fractionDigits, "0")}` : String(whole);
+}

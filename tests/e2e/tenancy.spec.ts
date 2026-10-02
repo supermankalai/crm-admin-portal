@@ -38,16 +38,18 @@ test.describe("tenant isolation through pages and API routes", () => {
 test.describe("roles", () => {
   test("a trainer sees a trainer's access, a front-desk user sees theirs", async ({ page }) => {
     await loginAndLand(page, "trainer1@irontemple.example", /\/g\/iron-temple\/dashboard/);
-    await expect(page.getByText("What the Trainer role can do in this gym")).toBeVisible();
-    await expect(page.getByText("Manage your own classes")).toBeVisible();
-    await expect(page.getByText("Record payments")).toHaveCount(0);
+    await expect(page.getByText("My clients", { exact: true })).toBeVisible();
+    await expect(page.getByText("My upcoming classes")).toBeVisible();
+    await expect(page.getByText("Revenue today")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Plan & billing" })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Log out" }).click();
 
     await loginAndLand(page, "frontdesk1@irontemple.example", /\/g\/iron-temple\/dashboard/);
-    await expect(page.getByText("Record payments")).toBeVisible();
-    await expect(page.getByText("Issue refunds")).toHaveCount(0);
+    await expect(page.getByText("Active members", { exact: true })).toBeVisible();
+    await expect(page.getByText("Revenue today")).toHaveCount(0); // no financials for front desk
+    await expect(page.getByRole("link", { name: "Membership plans" })).toBeVisible();
   });
 });
 
@@ -56,13 +58,14 @@ test.describe("gym switching", () => {
     await loginAndLand(page, "priya.nair@fitcrm.example", /\/select-gym/);
     await page.getByRole("link", { name: /Iron Temple Fitness/ }).click();
     await expect(page).toHaveURL(/\/g\/iron-temple\/dashboard/);
-    await expect(page.getByText("you are signed in as Trainer")).toBeVisible();
+    await expect(page.getByText(/Iron Temple Fitness · .* · Trainer$/)).toBeVisible();
+    await expect(page.getByText("Revenue today")).toHaveCount(0);
 
     await page.getByRole("button", { name: /Current gym: Iron Temple Fitness/ }).first().click();
     await page.getByRole("menuitem", { name: /Zen Strength Collective/ }).click();
     await expect(page).toHaveURL(/\/g\/zen-strength\/dashboard/);
-    await expect(page.getByText("you are signed in as Manager")).toBeVisible();
-    await expect(page.getByText("Issue refunds")).toBeVisible();
+    await expect(page.getByText(/Zen Strength Collective · .* · Manager$/)).toBeVisible();
+    await expect(page.getByText("Revenue today")).toBeVisible(); // managers see financials
     // Zen Strength is on a trial: the countdown banner is shown.
     await expect(page.getByRole("status").filter({ hasText: "Free trial" })).toBeVisible();
   });
@@ -86,9 +89,10 @@ test.describe("gym sign-up", () => {
     await page.getByRole("button", { name: /Create gym/ }).click();
 
     await expect(page).toHaveURL(new RegExp(`/g/peak-performance-${stamp}/dashboard`), { timeout: 30_000 });
-    await expect(page.getByText("you are signed in as Owner")).toBeVisible();
+    await expect(page.getByText(new RegExp(`Peak Performance ${stamp} · .* · Owner$`))).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "Free trial" })).toContainText("14 days left");
-    await expect(page.getByText("Pro", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "Plan & billing" }).click();
+    await expect(page.getByText("Pro plan")).toBeVisible();
   });
 
   test("a taken address is reported on the gym step", async ({ page }) => {

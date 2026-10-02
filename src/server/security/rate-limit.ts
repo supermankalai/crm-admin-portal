@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { withAnonymous } from "@/server/db/context";
+import { getEnv } from "@/server/env";
 
 /**
  * Postgres-backed fixed-window rate limiting (works across multiple app instances).
@@ -12,8 +13,12 @@ export type RateLimitRule = { name: string; limit: number; windowSeconds: number
 export const RATE_LIMITS = {
   loginPerEmailIp: { name: "login:email-ip", limit: 5, windowSeconds: 15 * 60 },
   loginPerEmail: { name: "login:email", limit: 20, windowSeconds: 15 * 60 },
-  loginPerIp: { name: "login:ip", limit: 30, windowSeconds: 15 * 60 },
-  signupPerIp: { name: "signup:ip", limit: 5, windowSeconds: 60 * 60 },
+  get loginPerIp() {
+    return { name: "login:ip", limit: getEnv().RATE_LIMIT_LOGIN_PER_IP, windowSeconds: 15 * 60 };
+  },
+  get signupPerIp() {
+    return { name: "signup:ip", limit: getEnv().RATE_LIMIT_SIGNUP_PER_IP, windowSeconds: 60 * 60 };
+  },
   passwordResetPerIp: { name: "reset:ip", limit: 5, windowSeconds: 60 * 60 },
   passwordResetPerEmail: { name: "reset:email", limit: 3, windowSeconds: 60 * 60 },
 } satisfies Record<string, RateLimitRule>;

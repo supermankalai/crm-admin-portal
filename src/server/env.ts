@@ -59,6 +59,10 @@ const envSchema = z
     EMAIL_PROVIDER: z.enum(["dev-outbox"]).default("dev-outbox"),
     EMAIL_FROM: z.string().min(3),
     LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
+    // Per-IP ceilings (per 15 min for login, per hour for sign-up). Raise only behind a trusted
+    // proxy that sets X-Forwarded-For, or for automated test runs.
+    RATE_LIMIT_LOGIN_PER_IP: z.coerce.number().int().positive().default(30),
+    RATE_LIMIT_SIGNUP_PER_IP: z.coerce.number().int().positive().default(5),
   })
   .superRefine((env, ctx) => {
     if (!env.ENCRYPTION_KEYS.has(env.ENCRYPTION_ACTIVE_KEY_VERSION)) {

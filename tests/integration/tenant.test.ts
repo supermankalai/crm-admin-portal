@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appDb } from "@/server/db/client";
 import { ForbiddenError, GymReadOnlyError, ValidationError } from "@/server/errors";
-import { getGymOverview } from "@/server/services/gym-overview";
+import { listMembers } from "@/server/services/members/list";
 import { listMyGyms } from "@/server/services/my-gyms";
 import { signupForExistingUser, signupWithNewOwner } from "@/server/services/signup";
 import { assertCan, assertWritable } from "@/server/tenant/guards";
@@ -84,11 +84,11 @@ describe("resolveTenant (the only way a TenantContext is built)", () => {
 });
 
 describe("tenant-scoped services", () => {
-  it("the overview counts only the current gym's rows", async () => {
+  it("the member list returns only the current gym's members", async () => {
     const ctxA = (await resolveTenant(asSessionUser(w.users.ownerA), "gym-a"))!;
-    const overview = await getGymOverview(ctxA);
-    expect(overview.members).toBe(1);
-    expect(overview.staff).toBe(2); // owner + front desk (removed staff excluded)
+    const result = await listMembers(ctxA, {});
+    expect(result.total).toBe(1);
+    expect(result.rows.map((r) => r.name)).toEqual(["Alice Anand"]);
   });
 });
 

@@ -6,8 +6,9 @@ One platform, many gyms. Each gym subscribes to a plan and manages only its own 
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
+> - **Phase 4:** dashboard, members and membership plans
 >
-> Members, payments, classes and the other gym features follow in Phases 4–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> Payments, check-in, classes and the remaining gym features follow in Phases 5–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -69,6 +70,7 @@ All variables are validated with Zod at startup ([src/server/env.ts](src/server/
 | `STORAGE_DIR` | — | Upload root. Files go to `STORAGE_DIR/<gymId>/…`. |
 | `EMAIL_PROVIDER`, `EMAIL_FROM` | ✓ | `dev-outbox` writes emails to `.dev-outbox/` |
 | `LOG_LEVEL` | — | `trace`, `debug`, `info`, `warn` or `error` |
+| `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-email login limit (5 per 15 minutes) is fixed. |
 
 `.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
 
@@ -135,6 +137,45 @@ Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms 
 2. They land in the gym with a red banner. **Everything is read-only**: `assertWritable` refuses writes, and RLS write policies require real staff membership.
 3. **Every page they open is written to the gym's own audit log** as `support.view`, with `actorType = SUPPORT`.
 4. *End support session* (or expiry) closes access immediately. The session is re-validated against the database on every request (owner, gym and expiry). The browser cookie holds only the session id and grants nothing by itself.
+
+## 4c. Gym features: dashboard, members, membership plans
+
+**Dashboard (`/g/<slug>/dashboard`).** Every figure is a live query in the gym's RLS context and the **gym's time zone**:
+- active members (a membership covering today that isn't frozen or cancelled)
+- new sign-ups this month
+- revenue today and this month (payments minus refunds), shown only to roles with financial access
+- memberships expiring in the next 7 days and not yet renewed
+- today's check-ins
+- upcoming classes
+- 6-month revenue and membership-growth charts
+
+Trainers see their own clients and classes. Front desk doesn't see revenue.
+
+**Members (`/g/<slug>/members`).**
+- **Search** by name, member number (`M-000123`), email, or **full phone number**. Phone search goes through the per-gym blind index, so phones are never decrypted for searching.
+- **Filter** by active, frozen, expired or no membership, and **sort**. Pagination is server-side, so only one page of rows (and decrypted phones) is ever sent to the browser.
+- **Profile tabs:**
+  - contact details, emergency contact and health notes (decrypted for display)
+  - memberships, with freeze, unfreeze and cancel
+  - payments and outstanding invoices
+  - attendance
+  - encrypted staff notes
+- **Roles:** front desk can add members and edit **contact details only**. Managers and owners can edit everything and soft-delete. Trainers see **only their assigned clients**.
+- Member numbers are sequential per gym. Plan limits are enforced on create.
+- **Photos:** checked by their bytes as JPEG, PNG or WebP, 2 MB maximum. They're stored under `storage/<gymId>/member-photo/` and served only through the tenant-checked `/api/g/<slug>/files/<id>`.
+- **Audit:** every change is audited with field *names* only, never values.
+
+**Membership plans (`/g/<slug>/plans`).**
+- Monthly, quarterly, yearly or class pack, with price (entered in rupees, stored exactly in paise), duration or validity, and class credits.
+- **Freeze rules:** whether freezing is allowed, and the maximum days per membership.
+- **Cancellation rules:** notice period and fee.
+- Names are unique per gym (case-insensitive).
+- Editing a plan affects new sales only, because the sold price is snapshotted on the membership. Archiving is a soft delete.
+
+**Membership rules** ([src/domain/membership.ts](src/domain/membership.ts), unit-tested):
+- A membership is *expired* the day after its end date. No job is needed.
+- **Freezing** starts today. It moves the end date out by the same number of days and counts against the plan's allowance. Unfreezing early gives back the unused days.
+- **Cancelling** applies the plan's notice period, never beyond the paid end date. With no notice period (or if it hasn't started yet) it ends immediately.
 
 ## 5. Encryption
 

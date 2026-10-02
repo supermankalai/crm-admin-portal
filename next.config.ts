@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   serverExternalPackages: ["@node-rs/argon2", "pg"],
+  // Images are capped at 2 MB by the upload validator; leave room for multipart overhead.
+  experimental: { serverActions: { bodySizeLimit: "2200kb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

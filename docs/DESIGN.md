@@ -930,3 +930,11 @@ Business logic lives in `src/domain` (pure) and `src/server/services` (I/O). Com
 | Waitlist position uniqueness | Partial unique index | Positions are assigned under the session's `FOR UPDATE` lock (Phase 6), with a CHECK that a position exists if and only if the booking is WAITLISTED. |
 | `db:reset` | `prisma migrate reset` | Still used by `npm run db:reset` for you. Test suites rebuild only databases ending in `_test`, by drop schema → `migrate deploy` → grants. |
 
+## 12. Notes from Phases 2–4
+
+- **Queries inside one transaction run sequentially.** A transaction holds one pg connection, so app code never uses `Promise.all` inside `withTenant` / `withPlatformAdmin`.
+- **Prisma itself can issue parallel relation queries** on a transaction connection. `pg` 8 serialises them, with a deprecation warning, and `pg` 9 will reject them, so `pg` stays on `^8` until Prisma changes this.
+- **Forms send raw values to server actions.** The action validates again with the same Zod schema. Schemas with transforms (e.g. `""` → `null`, rupees → paise) aren't idempotent, so sending the client's transformed output would fail.
+- **Display decryption is fault-tolerant.** `tryDecrypt` logs a failure (never the value) and shows a placeholder, so one corrupted or unknown-key value can't take a whole page down. Writes always use strict encryption.
+- **Cancellation fees** are calculated by the membership rules and recorded in the audit entry. Invoicing them is part of Payments (Phase 5).
+

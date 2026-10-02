@@ -395,7 +395,10 @@ export async function seedGym(
       createdAt: receivedAt,
     });
     if (fullRefund || partialRefund) {
-      const refundedAt = new Date(Math.min(receivedAt.getTime() + int(1, 10) * 86_400_000, NOW.getTime() - 3_600_000));
+      // 1–10 days after payment; for very recent payments, part-way between payment and now
+      // (clamping to "now" would pile refunds onto today and distort daily revenue).
+      const delay = int(1, 10) * 86_400_000;
+      const refundedAt = new Date(receivedAt.getTime() + Math.min(delay, Math.max((NOW.getTime() - receivedAt.getTime()) / 2, 60_000)));
       refunds.push({
         gymId,
         paymentId,

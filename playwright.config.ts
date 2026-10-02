@@ -33,6 +33,9 @@ export default defineConfig({
     env: {
       APP_URL: baseURL,
       NEXT_DIST_DIR: ".next-e2e",
+      // The whole suite signs in from 127.0.0.1; per-email limits stay at their real values.
+      RATE_LIMIT_LOGIN_PER_IP: "1000",
+      RATE_LIMIT_SIGNUP_PER_IP: "100",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       MIGRATION_DATABASE_URL: process.env.TEST_MIGRATION_DATABASE_URL ?? "",
     },

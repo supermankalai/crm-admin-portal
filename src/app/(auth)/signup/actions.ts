@@ -1,5 +1,6 @@
 "use server";
 
+import { CredentialsSignin } from "next-auth";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { signupExistingUserSchema, signupNewUserSchema } from "@/lib/validation/signup";
@@ -39,7 +40,13 @@ export async function signupAction(raw: unknown): Promise<ActionResult> {
     if (!parsed.success) throw new ValidationError("Please check the highlighted fields.", z.flattenError(parsed.error).fieldErrors as Record<string, string[]>);
     const { email, password, ownerName, ...gym } = parsed.data;
     await signupWithNewOwner(gym, { email, password, ownerName }, meta);
-    await signIn("credentials", { email, password, redirectTo: `/g/${gym.slug}/dashboard` });
+    try {
+      await signIn("credentials", { email, password, redirectTo: `/g/${gym.slug}/dashboard` });
+    } catch (error) {
+      // The gym exists; if automatic sign-in is refused (e.g. rate limited), let them sign in.
+      if (error instanceof CredentialsSignin) redirect(`/login?callbackUrl=/g/${gym.slug}/dashboard`);
+      throw error;
+    }
     return { ok: true, data: undefined };
   } catch (error) {
     unstable_rethrow(error);
