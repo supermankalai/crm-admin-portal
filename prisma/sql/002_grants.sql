@@ -16,6 +16,12 @@ REVOKE UPDATE, DELETE ON
   "gym-admin-portal"."SubscriptionHistory"
 FROM gym_app;
 
+-- Records of money and attendance are immutable: corrections are new entries.
+REVOKE UPDATE, DELETE ON
+  "gym-admin-portal"."Refund",
+  "gym-admin-portal"."CheckIn"
+FROM gym_app;
+
 -- Soft delete only (deletedAt) — or never deleted from the app at all.
 REVOKE DELETE ON
   "gym-admin-portal"."Member",

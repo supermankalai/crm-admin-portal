@@ -366,7 +366,7 @@ export async function seedGym(
 
     if (overdue || pendingNotDue) {
       const partial = overdue && chance(0.3) ? Math.floor(totals.totalMinor / 2) : 0;
-      invoices.push({ id: invoiceId, gymId, number: 0, memberId: ms.memberId, membershipId: ms.id, status: "OPEN", currency: "INR", ...totals, amountPaidMinor: partial, issuedAt, dueDate: dateOnly(dueOffset), createdAt: issuedAt });
+      invoices.push({ id: invoiceId, gymId, number: 0, description: `${plans.find((p) => p.id === ms.planId)!.name} membership`, memberId: ms.memberId, membershipId: ms.id, status: "OPEN", currency: "INR", ...totals, amountPaidMinor: partial, issuedAt, dueDate: dateOnly(dueOffset), createdAt: issuedAt });
       if (overdue) overdueInvoiceIds.push(invoiceId);
       if (partial) {
         payments.push({ id: id(), gymId, memberId: ms.memberId, invoiceId, amountMinor: partial, currency: "INR", method, receivedAt: past(new Date(issuedAt.getTime() + 5 * 60_000)), recordedById: recorder.id, reference: method === "TRANSFER" ? `UTR${int(100000000, 999999999)}` : null, createdAt: issuedAt });
@@ -375,7 +375,7 @@ export async function seedGym(
     }
 
     const receivedAt = past(new Date(issuedAt.getTime() + int(2, 30) * 60_000));
-    invoices.push({ id: invoiceId, gymId, number: 0, memberId: ms.memberId, membershipId: ms.id, status: "PAID", currency: "INR", ...totals, amountPaidMinor: totals.totalMinor, issuedAt, dueDate: dateOnly(dueOffset), paidAt: receivedAt, createdAt: issuedAt });
+    invoices.push({ id: invoiceId, gymId, number: 0, description: `${plans.find((p) => p.id === ms.planId)!.name} membership`, memberId: ms.memberId, membershipId: ms.id, status: "PAID", currency: "INR", ...totals, amountPaidMinor: totals.totalMinor, issuedAt, dueDate: dateOnly(dueOffset), paidAt: receivedAt, createdAt: issuedAt });
     const paymentId = id();
     const refundRoll = faker.number.float({ min: 0, max: 1 });
     const fullRefund = ms.status === "CANCELLED" || refundRoll < 0.02;

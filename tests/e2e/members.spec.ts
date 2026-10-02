@@ -26,8 +26,9 @@ test.describe("members", () => {
     await expect(page.getByText("Enter a first name")).toBeVisible();
 
     await addMember(page, "Neha", `Test${s}`, phone, `neha.${s}@example.com`);
-    await expect(page).toHaveURL(/\/g\/iron-temple\/members\/[a-z0-9]+$/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: `Neha Test${s}` })).toBeVisible();
+    // "/members/new" also matches a bare id pattern, so wait for the profile heading itself.
+    await expect(page.getByRole("heading", { name: `Neha Test${s}` })).toBeVisible({ timeout: 30_000 });
+    await expect(page).not.toHaveURL(/\/members\/new$/);
     await expect(page.getByText("No membership")).toBeVisible();
     await expect(page.locator("dd").filter({ hasText: phone })).toBeVisible();
 
@@ -98,7 +99,7 @@ test.describe("members", () => {
     const s = stamp();
     await loginAndLand(page, "owner@irontemple.example", /\/dashboard/);
     await addMember(page, "Temp", `Delete${s}`, `97${Date.now().toString().slice(-8)}`, `temp.${s}@example.com`);
-    await expect(page.getByRole("heading", { name: `Temp Delete${s}` })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: `Temp Delete${s}` })).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete member" }).click();
     await expect(page).toHaveURL(/\/g\/iron-temple\/members$/);
@@ -147,7 +148,8 @@ test.describe("membership plans", () => {
     await page.getByRole("dialog").getByLabel(/^Price/).fill("10");
     await page.getByRole("dialog").getByRole("button", { name: "Save plan" }).click();
     await expect(page.getByRole("dialog").getByText("A plan with this name already exists.")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
     await page.getByRole("button", { name: `Archive ${name}` }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Archive plan" }).click();

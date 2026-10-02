@@ -133,9 +133,13 @@ test.describe("plan limits", () => {
     await loginAsSuperAdmin(page);
     await page.goto("/admin/plans");
     const maxMembers = page.locator("#STARTER-maxMembers");
-    await maxMembers.selectText();
-    await maxMembers.pressSequentially("95");
-    await expect(maxMembers).toHaveValue("95");
+    // Number inputs have no text selection; clear with Ctrl+A and retry until hydrated.
+    await expect(async () => {
+      await maxMembers.click();
+      await maxMembers.press("Control+A");
+      await maxMembers.pressSequentially("95");
+      await expect(maxMembers).toHaveValue("95", { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     await page.locator("form").filter({ has: maxMembers }).getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Starter plan saved.")).toBeVisible();
     await logout(page);

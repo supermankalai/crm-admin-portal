@@ -7,8 +7,9 @@ One platform, many gyms. Each gym subscribes to a plan and manages only its own 
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
 > - **Phase 4:** dashboard, members and membership plans
+> - **Phase 5:** payments and check-in
 >
-> Payments, check-in, classes and the remaining gym features follow in Phases 5–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> Classes, staff, reports, notifications and settings follow in Phases 6–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -176,6 +177,32 @@ Trainers see their own clients and classes. Front desk doesn't see revenue.
 - A membership is *expired* the day after its end date. No job is needed.
 - **Freezing** starts today. It moves the end date out by the same number of days and counts against the plan's allowance. Unfreezing early gives back the unused days.
 - **Cancelling** applies the plan's notice period, never beyond the paid end date. With no notice period (or if it hasn't started yet) it ends immediately.
+
+## 4d. Payments and check-in
+
+**Payments (`/g/<slug>/payments`).**
+- **Selling a membership** (`/payments/sell`):
+  - One transaction creates the membership, its invoice (plan price plus the gym's tax rate, exact integer paise) and an optional payment. The payment can be in full, partial, or none (invoice only).
+  - Renewals start the day after the current membership ends, and overlapping memberships are refused.
+- **Payment methods:** cash, card, or bank transfer/UPI (which needs a reference).
+- **Recording payments** on an open invoice locks the invoice row, so concurrent payments can never overpay. Part payments are allowed.
+- **Invoices:** a list filtered by Open, **Overdue** (open and past due, in the gym's local date), Paid, Void or All, plus a printable invoice page. An unpaid invoice can be **voided**, which also cancels the unpaid membership it created.
+- **Refunds** (managers and owners) can be full or partial and need a reason. They can optionally **cancel the membership in the same transaction**.
+  - The database trigger `enforce_refund_total` refuses any refund beyond the payment, including concurrent refunds and direct SQL, and keeps `Payment.status` correct.
+  - Refunds and check-ins are **immutable** for the app role. A correction is a new entry.
+- **Cancellation fees** from a membership's plan are invoiced automatically when it's cancelled.
+- The payments list shows received, refunded and net totals for the date range, and a breakdown by method.
+
+**Check-in (`/g/<slug>/check-in`, front desk, managers and owners).**
+- **Ways to find a member:**
+  - **Scan the member's QR code.** The code is on their profile, ready to print as a card. It encodes `FITCRM:<random check-in code>`, which contains no personal data.
+  - Use a USB scanner, which types the code and presses Enter.
+  - Use the camera, in browsers with `BarcodeDetector`.
+  - Type a name, or a member ID such as `M-000123`.
+- A code or member ID checks the member in straight away. A name shows candidates, each with an allowed or denied preview.
+- **Expired, cancelled, frozen and not-yet-started memberships are blocked** with the reason, plus a one-click *Renew membership*. Overdue invoices are flagged.
+- **Every attempt is recorded** as allowed or denied, with a timestamp, the method used, the staff member and the location, plus an audit entry.
+- Re-scanning the same member within 2 minutes isn't counted twice. A per-member advisory lock means even simultaneous scans produce one check-in.
 
 ## 5. Encryption
 

@@ -164,7 +164,7 @@ export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:rounded focus:bg-background focus:p-2">
         Skip to content
       </a>
-      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 border-r bg-sidebar lg:block">{sidebar()}</aside>
+      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 border-r bg-sidebar lg:block print:hidden">{sidebar()}</aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
@@ -181,7 +181,7 @@ export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur md:px-6 print:hidden">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
             <Menu />
           </Button>
@@ -222,7 +222,7 @@ export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
-        {banner}
+        <div className="print:hidden">{banner}</div>
         <main id="main" className="flex-1 p-4 md:p-6">
           {children}
         </main>

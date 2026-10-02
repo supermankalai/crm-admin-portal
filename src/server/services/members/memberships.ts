@@ -7,6 +7,8 @@ import { NotFoundError, ValidationError } from "@/server/errors";
 import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
+import { invoiceCancellationFee } from "../billing/payments";
+import { nextInvoiceNumber } from "../billing/shared";
 import { todayFor } from "./shared";
 
 /** Load a membership (scoped to this gym by RLS) with its plan rules, locking it for update. */
@@ -16,7 +18,7 @@ async function loadForChange(tx: Tx, membershipId: string) {
     where: { id: membershipId },
     include: {
       member: { select: { deletedAt: true } },
-      plan: { select: { allowFreeze: true, maxFreezeDays: true, cancellationNoticeDays: true, cancellationFeeMinor: true } },
+      plan: { select: { name: true, allowFreeze: true, maxFreezeDays: true, cancellationNoticeDays: true, cancellationFeeMinor: true } },
       freezes: { select: { id: true, startDate: true, endDate: true } },
     },
   });
@@ -82,7 +84,7 @@ export async function unfreezeMembership(ctx: TenantContext, membershipId: strin
 
 /**
  * Cancel following the plan's notice period. A cancellation fee, if the plan has one, is
- * recorded here and invoiced through Payments.
+ * invoiced in the same transaction.
  */
 export async function cancelMembership(ctx: TenantContext, membershipId: string, reason: string, meta: RequestMeta) {
   assertCan(ctx, "members.edit");
@@ -100,12 +102,16 @@ export async function cancelMembership(ctx: TenantContext, membershipId: string,
       },
       select: { id: true },
     });
+    const feeInvoice =
+      plan.feeMinor > 0
+        ? await invoiceCancellationFee(tx, ctx, { memberId: m.memberId, membershipId, planName: m.plan.name, feeMinor: plan.feeMinor, number: await nextInvoiceNumber(tx, ctx) })
+        : null;
     await recordAudit(tx, ctx, {
       action: "membership.cancel",
       entityType: "Membership",
       entityId: membershipId,
-      changes: { effectiveEnd: plan.effectiveEnd, immediate: plan.endsImmediately, feeMinor: plan.feeMinor, endDate: { from: record.endDate, to: plan.effectiveEnd } },
+      changes: { effectiveEnd: plan.effectiveEnd, immediate: plan.endsImmediately, feeMinor: plan.feeMinor, feeInvoiceId: feeInvoice?.id ?? null, endDate: { from: record.endDate, to: plan.effectiveEnd } },
     }, meta);
-    return plan;
+    return { ...plan, feeInvoiceNumber: feeInvoice?.number ?? null };
   });
 }

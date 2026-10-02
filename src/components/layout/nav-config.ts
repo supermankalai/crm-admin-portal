@@ -24,7 +24,9 @@ export type NavItem = { label: string; path: string; icon: NavIcon; permission: 
  */
 export const GYM_NAV: NavItem[] = [
   { label: "Dashboard", path: "dashboard", icon: "dashboard", permission: "dashboard.view" },
+  { label: "Check-in", path: "check-in", icon: "checkin", permission: "checkin.perform" },
   { label: "Members", path: "members", icon: "members", permission: "members.view" },
+  { label: "Payments", path: "payments", icon: "payments", permission: "payments.view" },
   { label: "Membership plans", path: "plans", icon: "plans", permission: "plans.view" },
   { label: "Plan & billing", path: "billing", icon: "billing", permission: "billing.manage" },
 ];

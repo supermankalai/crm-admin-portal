@@ -73,6 +73,7 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  console.error("✖ Seed failed:", error instanceof Error ? error.message : error);
+  console.error("✖ Seed failed:", error instanceof Error ? error.message.trim() || error.name : error);
+  if (error instanceof Error && "meta" in error) console.error((error as { meta?: unknown }).meta);
   process.exit(1);
 });

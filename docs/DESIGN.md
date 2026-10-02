@@ -936,5 +936,7 @@ Business logic lives in `src/domain` (pure) and `src/server/services` (I/O). Com
 - **Prisma itself can issue parallel relation queries** on a transaction connection. `pg` 8 serialises them, with a deprecation warning, and `pg` 9 will reject them, so `pg` stays on `^8` until Prisma changes this.
 - **Forms send raw values to server actions.** The action validates again with the same Zod schema. Schemas with transforms (e.g. `""` → `null`, rupees → paise) aren't idempotent, so sending the client's transformed output would fail.
 - **Display decryption is fault-tolerant.** `tryDecrypt` logs a failure (never the value) and shows a placeholder, so one corrupted or unknown-key value can't take a whole page down. Writes always use strict encryption.
-- **Cancellation fees** are calculated by the membership rules and recorded in the audit entry. Invoicing them is part of Payments (Phase 5).
+- **Cancellation fees** are invoiced inside the cancellation transaction (Phase 5).
+- **Functions returning `void`** (e.g. `pg_advisory_xact_lock`, `rate_limit_reset`) must be called with `$executeRaw`. `$queryRaw` can't deserialise `void`.
+- **`npm audit` findings:** it reports 4 "high" issues, all inside the `prisma` CLI's own dependencies — `mysql2` (a MySQL driver this project never loads) and `deepmerge-ts` (used to merge our own trusted `prisma.config.ts`). No user input reaches them. The suggested `--force` fix downgrades to Prisma 6 and breaks the app, so it isn't applied. Re-check on each Prisma release.
 

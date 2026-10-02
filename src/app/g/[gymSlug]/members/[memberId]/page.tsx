@@ -7,6 +7,9 @@ import { EmptyState } from "@/components/empty-state";
 import { LinkTabs } from "@/components/link-tabs";
 import { MemberAvatar } from "@/components/members/member-avatar";
 import { MembershipStateBadge, MemberStatusBadge } from "@/components/members/member-badges";
+import { MemberQr } from "@/components/members/member-qr";
+import { Button } from "@/components/ui/button";
+import { formatInvoiceNumber } from "@/domain/billing";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -89,6 +92,11 @@ export default async function MemberProfilePage({
             <span>· Member since {formatDate(member.joinedAt, tz)}</span>
           </div>
         </div>
+        {writable && hasPermission(ctx, "payments.record") && (
+          <Button asChild>
+            <Link href={`/g/${gymSlug}/payments/sell?memberId=${member.id}`}>{current ? "Renew membership" : "Sell membership"}</Link>
+          </Button>
+        )}
         {writable && (
           <MemberActions
             gymSlug={gymSlug}
@@ -167,9 +175,7 @@ export default async function MemberProfilePage({
               </CardHeader>
               <CardContent>
                 <dl className="grid gap-3">
-                  <Detail label="Check-in code">
-                    <span className="font-mono tracking-widest">{member.checkInCode}</span>
-                  </Detail>
+                  <MemberQr code={member.checkInCode} label={`Check-in QR code for ${name}`} />
                   <Detail label="Visits (last 30 days)">{profile.visits.last30Days}</Detail>
                   <Detail label="Visits (all time)">{profile.visits.total}</Detail>
                   <Detail label="Trainer">{profile.trainers.map((t) => t.name).join(", ")}</Detail>
@@ -182,7 +188,7 @@ export default async function MemberProfilePage({
         {tab === "memberships" && (
           <Card className="gap-0 py-0">
             {profile.memberships.length === 0 ? (
-              <EmptyState title="No memberships yet" description="Memberships are sold from the Payments page." />
+              <EmptyState title="No memberships yet" description="Use Sell membership to start one." />
             ) : (
               <Table>
                 <TableHeader>
@@ -252,7 +258,9 @@ export default async function MemberProfilePage({
                     const overdue = inv.dueDate.toISOString().slice(0, 10) < today;
                     return (
                       <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
-                        <span className="font-mono">INV-{String(inv.number).padStart(6, "0")}</span>
+                        <Link href={`/g/${gymSlug}/invoices/${inv.id}`} className="font-mono hover:underline">
+                          {formatInvoiceNumber(inv.number)}
+                        </Link>
                         <span>
                           {formatMoney(inv.totalMinor - inv.amountPaidMinor, inv.currency)} due {formatDate(inv.dueDate.toISOString().slice(0, 10))}
                         </span>
@@ -281,7 +289,7 @@ export default async function MemberProfilePage({
                     {profile.payments.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell className="text-xs">{formatDateTime(p.receivedAt, tz)}</TableCell>
-                        <TableCell className="font-mono text-xs">{p.invoice ? `INV-${String(p.invoice.number).padStart(6, "0")}` : "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{p.invoice ? formatInvoiceNumber(p.invoice.number) : "—"}</TableCell>
                         <TableCell className="text-xs">
                           {METHOD[p.method]}
                           {p.reference && <span className="block text-muted-foreground">{p.reference}</span>}

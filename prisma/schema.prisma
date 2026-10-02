@@ -593,6 +593,7 @@ model Invoice {
   id              String        @id @default(cuid(2))
   gymId           String
   number          Int
+  description     String? // e.g. "Quarterly membership" or "Cancellation fee"
   memberId        String
   membershipId    String?
   status          InvoiceStatus @default(OPEN)
