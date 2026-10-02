@@ -27,6 +27,9 @@ export const GYM_NAV: NavItem[] = [
   { label: "Check-in", path: "check-in", icon: "checkin", permission: "checkin.perform" },
   { label: "Members", path: "members", icon: "members", permission: "members.view" },
   { label: "Payments", path: "payments", icon: "payments", permission: "payments.view" },
+  { label: "Classes", path: "classes", icon: "classes", permission: "classes.view" },
   { label: "Membership plans", path: "plans", icon: "plans", permission: "plans.view" },
+  { label: "Staff", path: "staff", icon: "staff", permission: "staff.view" },
+  { label: "My schedule", path: "schedule", icon: "schedule", permission: "schedule.view" },
   { label: "Plan & billing", path: "billing", icon: "billing", permission: "billing.manage" },
 ];

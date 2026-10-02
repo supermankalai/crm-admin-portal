@@ -940,3 +940,14 @@ Business logic lives in `src/domain` (pure) and `src/server/services` (I/O). Com
 - **Functions returning `void`** (e.g. `pg_advisory_xact_lock`, `rate_limit_reset`) must be called with `$executeRaw`. `$queryRaw` can't deserialise `void`.
 - **`npm audit` findings:** it reports 4 "high" issues, all inside the `prisma` CLI's own dependencies — `mysql2` (a MySQL driver this project never loads) and `deepmerge-ts` (used to merge our own trusted `prisma.config.ts`). No user input reaches them. The suggested `--force` fix downgrades to Prisma 6 and breaks the app, so it isn't applied. Re-check on each Prisma release.
 
+## 13. Notes from Phase 6
+
+- **Booking credits:** `Booking.creditMembershipId` records which class pack paid for a booking (a composite FK on `(gymId, id)`), so a cancellation returns the credit to the right membership. Credits are spent with a guarded `updateMany … classCreditsRemaining > 0`, so they can never go negative.
+- **Capacity:** every booking, cancellation and capacity change locks the `ClassSession` row (`SELECT … FOR UPDATE`) before counting. Waitlist positions are renumbered in the same transaction.
+- **Invitations are accepted in the database.** `invitation_accept(token_hash, name, password_hash)` is a narrow `SECURITY DEFINER` function, because a not-yet-member can't pass staff RLS policies.
+  - It locks the invitation and checks its state, and requires a matching email for existing accounts.
+  - It creates or reactivates the staff row; the plan-limit trigger still applies.
+  - It writes the audit entry.
+  - `invitation_lookup` returns only the gym name and slug, the email, the role, the state and whether an account exists. EXECUTE on both is revoked from PUBLIC.
+- **Email** goes through the `EmailProvider` interface. Dev writes `.eml` files to `.dev-outbox/`. The invitation link is returned once to the inviter and never logged.
+

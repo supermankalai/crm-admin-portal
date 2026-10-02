@@ -562,11 +562,12 @@ model Membership {
   createdAt             DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
 
-  gym      Gym                @relation(fields: [gymId], references: [id])
-  member   Member             @relation(fields: [gymId, memberId], references: [gymId, id])
-  plan     MembershipPlan     @relation(fields: [gymId, planId], references: [gymId, id])
-  freezes  MembershipFreeze[]
-  invoices Invoice[]
+  gym            Gym                @relation(fields: [gymId], references: [id])
+  member         Member             @relation(fields: [gymId, memberId], references: [gymId, id])
+  plan           MembershipPlan     @relation(fields: [gymId, planId], references: [gymId, id])
+  freezes        MembershipFreeze[]
+  invoices       Invoice[]
+  creditBookings Booking[]          @relation("BookingCredit")
 
   @@unique([gymId, id])
   @@index([gymId, memberId])
@@ -748,20 +749,22 @@ model ClassSession {
 }
 
 model Booking {
-  id               String        @id @default(cuid(2))
-  gymId            String
-  sessionId        String
-  memberId         String
-  status           BookingStatus
-  waitlistPosition Int?
-  bookedAt         DateTime      @default(now()) @db.Timestamptz(3)
-  cancelledAt      DateTime?     @db.Timestamptz(3)
-  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+  id                 String        @id @default(cuid(2))
+  gymId              String
+  sessionId          String
+  memberId           String
+  creditMembershipId String? // class-pack membership whose credit this booking used
+  status             BookingStatus
+  waitlistPosition   Int?
+  bookedAt           DateTime      @default(now()) @db.Timestamptz(3)
+  cancelledAt        DateTime?     @db.Timestamptz(3)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
 
-  gym     Gym          @relation(fields: [gymId], references: [id])
-  session ClassSession @relation(fields: [gymId, sessionId], references: [gymId, id])
-  member  Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  gym              Gym          @relation(fields: [gymId], references: [id])
+  session          ClassSession @relation(fields: [gymId, sessionId], references: [gymId, id])
+  member           Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  creditMembership Membership?  @relation("BookingCredit", fields: [gymId, creditMembershipId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([sessionId, memberId])
   @@index([gymId, sessionId, status])

@@ -74,3 +74,16 @@ export function ageOn(dateOfBirth: DateString, today: DateString): number {
   const [ty, tm, td] = today.split("-").map(Number);
   return ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
 }
+
+/** UTC instant for a gym-local date + "HH:MM" wall-clock time. */
+export function localDateTime(date: DateString, hhmm: string, timeZone: string): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = hhmm.split(":").map(Number);
+  return new Date(new TZDate(y, m - 1, d, hh, mm, 0, timeZone).getTime());
+}
+
+/** "HH:MM" wall-clock time of an instant in the gym's time zone. */
+export function localTime(instant: Date, timeZone: string): string {
+  const t = new TZDate(instant.getTime(), timeZone);
+  return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+}

@@ -2,14 +2,15 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: Phase 3 of 8 complete.** Done so far:
+> **Build status: Phase 6 of 8 complete.** Done so far:
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
 > - **Phase 4:** dashboard, members and membership plans
 > - **Phase 5:** payments and check-in
+> - **Phase 6:** classes, waitlists, staff invitations, trainer profiles and schedules
 >
-> Classes, staff, reports, notifications and settings follow in Phases 6–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> Reports, notifications, settings and the audit log page follow in Phase 7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -203,6 +204,45 @@ Trainers see their own clients and classes. Front desk doesn't see revenue.
 - **Expired, cancelled, frozen and not-yet-started memberships are blocked** with the reason, plus a one-click *Renew membership*. Overdue invoices are flagged.
 - **Every attempt is recorded** as allowed or denied, with a timestamp, the method used, the staff member and the location, plus an audit entry.
 - Re-scanning the same member within 2 minutes isn't counted twice. A per-member advisory lock means even simultaneous scans produce one check-in.
+
+## 4e. Classes, staff and schedules
+
+**Classes (`/g/<slug>/classes`).**
+- **Setup** (`/classes/setup`, managers and owners): class types (name, colour, default length and capacity) and rooms (per location, with a maximum capacity).
+- **Scheduling** (`/classes/new`):
+  - Pick a class, trainer, room, date and gym-local start time, optionally repeated weekly for up to 12 weeks.
+  - Capacity can't exceed the room's.
+  - A trainer or room that is already busy at that time is refused, naming the clash.
+- **Weekly timetable** with filters by location, trainer and class type. Trainers see only their own classes.
+- **Booking** (front desk, managers, owners; needs the plan's *class bookings* feature):
+  - The member needs a membership that is valid on the **class date**, not frozen.
+  - An unlimited membership is used before a class pack. Packs spend one credit, and only when a spot is confirmed, never while waitlisted.
+  - **No overbooking.** The session row is locked (`FOR UPDATE`) for every booking, so simultaneous bookings for the last spot give one booking and a waitlist entry. A test fires 20 bookings at a 5-spot class at once.
+  - When the class is full, members join a numbered **waitlist**.
+- **Cancelling a booking** before the class starts returns a pack credit and **promotes the first eligible person** on the waitlist. Members whose membership lapsed in the meantime are skipped. Raising capacity also promotes.
+- **Cancelling a class** (managers, or the class's own trainer) cancels every booking and returns credits.
+- **Attendance** is marked by the trainer or a manager, from 30 minutes before the class until a day after.
+
+**Staff (`/g/<slug>/staff`).**
+- **Invitations:**
+  - Owners can invite any role. Managers can invite front desk and trainers.
+  - The link `…/invite/<token>` is shown **once**, and also emailed. Its token is 32 random bytes, and only its SHA-256 hash is stored.
+  - Invitations are single-use, expire after 7 days, and can be revoked.
+  - Pending invitations count toward the plan's staff limit.
+- **Accepting** goes through the `invitation_accept` database function, which locks the invitation:
+  - **New email:** the person creates an account, then lands on the gym's dashboard.
+  - **Existing account:** the person must be **signed in as that email**.
+  - One person can work at several gyms with different roles.
+- **Roles and removal** are owner only:
+  - The last owner can't be demoted or removed.
+  - Removal ends access to that gym immediately; the account and history stay.
+- **Staff profiles:** title, phone (encrypted), specialties, bio, and private staff notes (encrypted, managers only).
+- **Trainer clients:** members can be assigned to and removed from a trainer.
+- **Shifts:** per location, with overlaps for the same person refused.
+
+**My schedule (`/g/<slug>/schedule`)** shows the signed-in person's shifts and classes for the week.
+
+**Email in development.** Emails are not sent. The dev provider writes `.eml` files to `.dev-outbox/` (gitignored) and logs only the recipient, subject and file name. A real provider plugs in behind the `EmailProvider` interface ([src/server/email](src/server/email)).
 
 ## 5. Encryption
 
