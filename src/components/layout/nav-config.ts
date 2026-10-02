@@ -13,7 +13,8 @@ export type NavIcon =
   | "reports"
   | "notifications"
   | "settings"
-  | "audit";
+  | "audit"
+  | "billing";
 
 export type NavItem = { label: string; path: string; icon: NavIcon; permission: Permission };
 
@@ -21,4 +22,7 @@ export type NavItem = { label: string; path: string; icon: NavIcon; permission: 
  * Gym navigation. Items are filtered on the server by the user's permissions; each target page
  * also checks the permission itself. Items are added here as their pages are built.
  */
-export const GYM_NAV: NavItem[] = [{ label: "Dashboard", path: "dashboard", icon: "dashboard", permission: "dashboard.view" }];
+export const GYM_NAV: NavItem[] = [
+  { label: "Dashboard", path: "dashboard", icon: "dashboard", permission: "dashboard.view" },
+  { label: "Plan & billing", path: "billing", icon: "billing", permission: "billing.manage" },
+];

@@ -29,7 +29,7 @@ test.describe("tenant isolation through pages and API routes", () => {
 
   test("a super admin cannot casually open a gym", async ({ page }) => {
     await login(page, "superadmin@fitcrm.example", "SuperAdmin#2026");
-    await expect(page).toHaveURL(/\/select-gym/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/admin$/, { timeout: 20_000 });
     const response = await page.goto("/g/iron-temple/dashboard");
     expect(response?.status()).toBe(404);
   });

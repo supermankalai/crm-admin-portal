@@ -2,7 +2,12 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: Phase 2 of 8 complete.** Done so far: database roles, RLS, encryption, seed, login (Phase 1), plus the multi-tenant layer, gym sign-up with a 14-day trial, gym switching, roles and the gym layout (Phase 2). Members, plans, payments and the other gym features follow in Phases 3–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> **Build status: Phase 3 of 8 complete.** Done so far:
+> - **Phase 1:** database roles, RLS, encryption, seed, login
+> - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
+> - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
+>
+> Members, payments, classes and the other gym features follow in Phases 4–7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -100,6 +105,36 @@ Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms 
 **Sign-up** (`/signup`): gym details → owner account → plan, which starts a **14-day trial**. A signed-in user can add another gym and becomes its owner. Sign-up goes through the `signup_create_gym` database function: one transaction creates the gym, owner, trial, subscription history, default location and opening hours, counters and audit rows. Sign-up is rate-limited to 5 per hour per IP.
 
 **Gym switching:** use the gym menu at the top of the sidebar, or `/select-gym`. A user with exactly one gym goes straight to its dashboard after login.
+
+## 4b. Platform administration and subscriptions
+
+**Super admin area (`/admin`).** Super admins land here after login. `isSuperAdmin` is re-read from the database on every request; anyone else gets a 404.
+
+| Page | What it does |
+|---|---|
+| `/admin` | Platform analytics: gyms by status, MRR, trials ending soon, member and check-in totals, sign-ups per month, gyms per plan. Numbers come from the `platform_stats()` database function and are **aggregates only**. |
+| `/admin/gyms`, `/admin/gyms/[id]` | Gym list with search and status filter, and per-gym usage counts. The gym page has the subscription actions, subscription history, platform audit and support access. |
+| `/admin/plans` | Edit Starter / Growth / Pro: price, maximum members, staff and locations, and the reports, CSV export and class booking flags |
+| `/admin/support` | All support sessions: who, which gym, why, and when |
+| `/admin/audit` | Platform audit log (logins, failed logins, sign-ups, subscription, plan and support events). Append-only. |
+
+**Subscriptions (manual billing).** A super admin can activate (1–24 months), extend (days), change plan, suspend, reactivate or cancel a gym's subscription.
+- Destructive actions need a reason and a confirmation.
+- Each change runs in one transaction: it locks the subscription row, updates the gym and subscription, appends `SubscriptionHistory`, and writes a platform audit entry.
+- The rules are pure functions in [src/domain/subscription-changes.ts](src/domain/subscription-changes.ts). Persistence sits behind a `BillingProvider` interface ([src/server/billing](src/server/billing)), so a Stripe provider can plug in later and reuse the same history, audit and read-only behaviour.
+- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, and clears stale rate-limit buckets. Read-only mode doesn't depend on it.
+
+**Plan limits and feature flags.**
+- `assertWithinLimit()` and `assertFeature()` run on the server before members, staff or locations are created, and before reports or exports. The UI shows upgrade messages such as *"Your Starter plan includes up to 150 members, and you've reached it. Upgrade your plan to add more."*
+- The database trigger `enforce_plan_limits` enforces the same limits again. It takes a per-gym advisory lock, so concurrent sign-ups can't overshoot. It applies to the owner role too, and to bulk inserts as a whole.
+- Lowering a plan never deletes data. It only blocks *new* rows beyond the new limit.
+- Owners see usage meters, included features and subscription history at **`/g/<slug>/billing`**.
+
+**Support access.** A super admin cannot open a gym's pages by default (404). To help a gym:
+1. Open the gym in `/admin`, enter a **reason** (at least 10 characters), and click *Start support access*. This creates a `SupportAccessSession` (60 minutes maximum, one at a time) and logs `support.start`.
+2. They land in the gym with a red banner. **Everything is read-only**: `assertWritable` refuses writes, and RLS write policies require real staff membership.
+3. **Every page they open is written to the gym's own audit log** as `support.view`, with `actorType = SUPPORT`.
+4. *End support session* (or expiry) closes access immediately. The session is re-validated against the database on every request (owner, gym and expiry). The browser cookie holds only the session id and grants nothing by itself.
 
 ## 5. Encryption
 
@@ -201,7 +236,7 @@ Notes:
 
 ```
 prisma/              schema, migrations (incl. RLS), sql/ role + grants, seed/
-scripts/             db.ts (roles/migrate/reset), generate-keys.ts, crypto-rotate.ts
+scripts/             db.ts (roles/migrate/reset), generate-keys.ts, crypto-rotate.ts, jobs-run.ts
 src/app/             routes: (auth)/login + signup, select-gym, g/[gymSlug]/…, api/
 src/server/          server-only code: env, db (RLS context), auth, crypto, security, audit, services
 src/domain/          pure business rules (permissions, subscription access, money, slugs, …)

@@ -26,7 +26,8 @@ export type TenantContext = {
     taxRateBps: number;
     brandColor: string;
   };
-  staffId: string;
+  /** Null for super admin support access (not a staff member). */
+  staffId: string | null;
   role: GymRole;
   permissions: ReadonlySet<Permission>;
   plan: PlanSummary | null;

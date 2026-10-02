@@ -36,8 +36,13 @@ export default async function SelectGymPage() {
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-primary" aria-hidden /> Platform administrator
             </CardTitle>
-            <CardDescription>The platform admin area is built in Phase 3.</CardDescription>
+            <CardDescription>Manage gyms, plans and subscriptions.</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button asChild className="w-full">
+              <Link href="/admin">Open platform admin</Link>
+            </Button>
+          </CardContent>
         </Card>
       )}
 

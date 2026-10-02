@@ -39,3 +39,15 @@ export class ValidationError extends AppError {
     super(message, "validation", 422);
   }
 }
+
+export class PlanLimitError extends AppError {
+  constructor(message: string) {
+    super(message, "plan_limit", 402);
+  }
+}
+
+export class FeatureNotInPlanError extends AppError {
+  constructor(message: string) {
+    super(message, "feature_not_in_plan", 402);
+  }
+}

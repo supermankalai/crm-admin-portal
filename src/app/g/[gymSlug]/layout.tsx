@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GymShell } from "@/components/layout/gym-shell";
 import { GYM_NAV } from "@/components/layout/nav-config";
 import { SubscriptionBanner } from "@/components/layout/subscription-banner";
+import { SupportBanner } from "@/components/layout/support-banner";
 import { ROLE_LABELS } from "@/domain/permissions";
 import { listMyGyms } from "@/server/services/my-gyms";
 import { requireGymAccess } from "@/server/tenant";
@@ -22,7 +23,7 @@ export default async function GymLayout({ children, params }: Props) {
   return (
     <GymShell
       gym={{ slug: ctx.gym.slug, name: ctx.gym.name, brandColor: ctx.gym.brandColor }}
-      roleLabel={ROLE_LABELS[ctx.role]}
+      roleLabel={ctx.supportSessionId ? "Support (read-only)" : ROLE_LABELS[ctx.role]}
       user={{ name: ctx.user.name, email: ctx.user.email, isSuperAdmin: ctx.user.isSuperAdmin }}
       nav={GYM_NAV.filter((item) => ctx.permissions.has(item.permission)).map((item) => ({
         label: item.label,
@@ -30,7 +31,12 @@ export default async function GymLayout({ children, params }: Props) {
         href: `/g/${ctx.gym.slug}/${item.path}`,
       }))}
       gyms={gyms.map(({ gym, role }) => ({ slug: gym.slug, name: gym.name, brandColor: gym.brandColor, roleLabel: ROLE_LABELS[role] }))}
-      banner={<SubscriptionBanner access={ctx.access} canManageBilling={ctx.permissions.has("billing.manage")} />}
+      banner={
+        <>
+          {ctx.supportSessionId && <SupportBanner gymName={ctx.gym.name} />}
+          <SubscriptionBanner access={ctx.access} canManageBilling={ctx.permissions.has("billing.manage")} />
+        </>
+      }
       logoutAction={logoutAction}
     >
       {children}

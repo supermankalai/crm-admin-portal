@@ -6,12 +6,11 @@ import type { TenantContext } from "@/server/tenant/types";
 export async function getGymOverview(ctx: TenantContext) {
   assertCan(ctx, "dashboard.view");
   return inTenant(ctx, async (tx) => {
-    const [members, staff, locations, staffByRole] = await Promise.all([
-      tx.member.count({ where: { deletedAt: null } }),
-      tx.staffMember.count({ where: { status: "ACTIVE" } }),
-      tx.location.count({ where: { isActive: true } }),
-      tx.staffMember.groupBy({ by: ["role"], where: { status: "ACTIVE" }, _count: { _all: true } }),
-    ]);
+    // Sequential: queries inside one transaction share a single connection.
+    const members = await tx.member.count({ where: { deletedAt: null } });
+    const staff = await tx.staffMember.count({ where: { status: "ACTIVE" } });
+    const locations = await tx.location.count({ where: { isActive: true } });
+    const staffByRole = await tx.staffMember.groupBy({ by: ["role"], where: { status: "ACTIVE" }, _count: { _all: true } });
     return {
       members,
       staff,

@@ -20,7 +20,8 @@
     "db:reset:test": "tsx scripts/db.ts reset --test",
     "db:seed": "prisma db seed",
     "keys:generate": "tsx scripts/generate-keys.ts",
-    "crypto:rotate": "tsx scripts/crypto-rotate.ts"
+    "crypto:rotate": "tsx scripts/crypto-rotate.ts",
+    "jobs:run": "tsx scripts/jobs-run.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

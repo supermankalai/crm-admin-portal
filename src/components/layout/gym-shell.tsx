@@ -22,6 +22,8 @@ import {
   Tags,
   UserCog,
   Users,
+  ShieldCheck,
+  Sparkles,
   X,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -52,6 +54,7 @@ const ICONS: Record<NavIcon, typeof LayoutDashboard> = {
   notifications: Bell,
   settings: Settings,
   audit: ClipboardList,
+  billing: Sparkles,
 };
 
 export type ShellProps = {
@@ -205,6 +208,13 @@ export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction
                   <Building2 /> All my gyms
                 </Link>
               </DropdownMenuItem>
+              {user.isSuperAdmin && (
+                <DropdownMenuItem asChild>
+                  <Link href="/admin">
+                    <ShieldCheck /> Platform admin
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => void logoutAction()}>
                 <LogOut /> Log out

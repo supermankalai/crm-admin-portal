@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Permission } from "@/domain/permissions";
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import { logger } from "@/server/logger";
+import { planLimitErrorFrom } from "@/server/plan/limits";
 import { assertCan, assertWritable, getGymAccess, type TenantContext } from "@/server/tenant";
 
 export type ActionResult<T = undefined> =
@@ -27,8 +28,9 @@ export function gymAction<S extends z.ZodType, R>(
   handler: (ctx: TenantContext, input: z.infer<S>) => Promise<R>
 ) {
   return async (gymSlug: string, rawInput: unknown): Promise<ActionResult<R>> => {
+    let ctx: TenantContext | null = null;
     try {
-      const ctx = await getGymAccess(String(gymSlug));
+      ctx = await getGymAccess(String(gymSlug));
       if (!ctx) throw new NotFoundError("This gym was not found or you no longer have access to it.");
       assertCan(ctx, options.permission);
       if (options.write) assertWritable(ctx);
@@ -40,7 +42,9 @@ export function gymAction<S extends z.ZodType, R>(
       return { ok: true, data: await handler(ctx, parsed.data) };
     } catch (error) {
       unstable_rethrow(error); // let redirect()/notFound() from handlers propagate
-      return toActionError(error);
+      // The database trigger enforces plan limits atomically; show the same upgrade message.
+      const planLimit = ctx ? planLimitErrorFrom(error, ctx) : null;
+      return toActionError(planLimit ?? error);
     }
   };
 }
