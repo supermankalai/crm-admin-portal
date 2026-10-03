@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { addDays, dayBounds, localDateTime } from "@/domain/dates";
 import { overlaps } from "@/domain/classes";
 import { assertCanChangeRole, assertCanInvite, assertCanRemove, INVITATION_DAYS, StaffRuleError } from "@/domain/staff";
-import type { GymRole } from "@/domain/permissions";
+import { assignableRoles, type GymRole } from "@/domain/permissions";
 import { limitMessage } from "@/domain/plan-limits";
 import { recordAudit } from "@/server/audit/tenant-audit";
 import { encryptOptional, tryDecrypt } from "@/server/crypto";
@@ -113,7 +113,10 @@ export async function getStaffProfile(ctx: TenantContext, staffId: string) {
   });
 }
 
-/** Profile fields: staff edit their own; owners/managers edit anyone. Staff notes: owners/managers only. */
+/**
+ * Profile fields: staff edit their own; owners edit anyone; managers edit the roles they may
+ * assign (front desk, trainers) — never an owner's or another manager's. Staff notes likewise.
+ */
 export async function updateStaffProfile(
   ctx: TenantContext,
   input: { staffId: string; title: string | null; bio: string | null; specialties: string[]; phone: string | null; notes: string | null },
@@ -123,8 +126,9 @@ export async function updateStaffProfile(
   const isManager = ctx.permissions.has("staff.invite");
   if (!isSelf && !isManager) throw new ForbiddenError();
   return inTenant(ctx, async (tx) => {
-    const s = await tx.staffMember.findFirst({ where: { id: input.staffId, status: "ACTIVE" }, select: { id: true } });
+    const s = await tx.staffMember.findFirst({ where: { id: input.staffId, status: "ACTIVE" }, select: { id: true, role: true } });
     if (!s) throw new NotFoundError("Staff member not found.");
+    if (!isSelf && !assignableRoles(ctx.role).includes(s.role)) throw new ForbiddenError("Only the gym owner can edit this person's profile.");
     const crypto = staffCrypto(ctx.gym.id, s.id);
     await tx.staffMember.update({
       where: { id: s.id },
@@ -237,6 +241,12 @@ export async function inviteStaff(ctx: TenantContext, input: { email: string; ro
     const already = await tx.staffMember.findFirst({ where: { status: "ACTIVE", user: { email: input.email } }, select: { id: true } });
     if (already) throw new ValidationError("This person already works at this gym.", { email: ["Already a staff member here"] });
 
+    // A new invitation replaces a pending one — but a manager can't replace an owner's invitation
+    // for a role they couldn't have issued themselves.
+    const previous = await tx.staffInvitation.findMany({ where: { email: input.email, acceptedAt: null, revokedAt: null }, select: { role: true } });
+    if (previous.some((p) => !assignableRoles(ctx.role).includes(p.role))) {
+      throw new ForbiddenError("The gym owner has already invited this person. Ask the owner to change or withdraw that invitation.");
+    }
     await tx.staffInvitation.updateMany({ where: { email: input.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
     const active = await tx.staffMember.count({ where: { status: "ACTIVE" } });
     const pending = await tx.staffInvitation.count({ where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } } });
@@ -262,8 +272,9 @@ export async function inviteStaff(ctx: TenantContext, input: { email: string; ro
 export async function revokeInvitation(ctx: TenantContext, invitationId: string, meta: RequestMeta) {
   assertCan(ctx, "staff.invite");
   return inTenant(ctx, async (tx) => {
-    const inv = await tx.staffInvitation.findFirst({ where: { id: invitationId, acceptedAt: null, revokedAt: null }, select: { id: true, email: true } });
+    const inv = await tx.staffInvitation.findFirst({ where: { id: invitationId, acceptedAt: null, revokedAt: null }, select: { id: true, email: true, role: true } });
     if (!inv) throw new NotFoundError("Invitation not found.");
+    if (!assignableRoles(ctx.role).includes(inv.role)) throw new ForbiddenError("Only the gym owner can withdraw this invitation.");
     await tx.staffInvitation.update({ where: { id: inv.id }, data: { revokedAt: new Date() }, select: { id: true } });
     await recordAudit(tx, ctx, { action: "staff.invite_revoke", entityType: "StaffInvitation", entityId: inv.id, changes: { email: inv.email } }, meta);
   });

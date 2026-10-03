@@ -963,3 +963,18 @@ Business logic lives in `src/domain` (pure) and `src/server/services` (I/O). Com
 - **CSV:** RFC 4180 with CRLF and a BOM. Formula-like text cells are prefixed with `'`.
 - **Gym logo:** the trigger `Gym_logo_owned` requires `logoFileId` to be a `GYM_LOGO` FileAsset of the same gym. The file route serves logos to all staff; member photos keep member-visibility rules.
 - **Time zones:** ICU lists canonical names (e.g. `Asia/Calcutta`), so validation accepts any zone the runtime can use (including aliases such as `Asia/Kolkata`). The picker always includes the gym's current zone.
+
+## 15. Notes from Phase 8 (security review)
+
+An independent review of every action, route, service, policy and SECURITY DEFINER function found no critical or high issues. These findings were fixed, each with a regression test:
+
+- **Open redirect:** `/login?callbackUrl=/%09/evil.com` got past the checks, because browsers strip the tab and see `//evil.com`. `safeRedirectPath` now rejects control characters and whitespace, and requires that parsing the value keeps the same origin.
+- **Spoofable client IP:** the first `X-Forwarded-For` entry was trusted. The IP is now read `TRUSTED_PROXY_HOPS` entries from the right (`lib/client-ip.ts`). A successful login also resets the per-account bucket.
+- **Trainer dashboard:** the expiring-memberships card listed every member. It is now limited to the trainer's own clients.
+- **Support-access audit:** support views made through server actions and API routes are now audited, not just page views. The proxy runs on prefetches too, so `x-pathname` can't be supplied by the client.
+- **Managers acting on owners:** managers could edit an owner's profile or notes, and revoke or replace an owner's invitation for a higher role. Both are now limited to `assignableRoles`.
+- **Class reassignment:** reassigning a class now requires an active staff member who can teach.
+- **Session revocation:** `sessionVersion` was never bumped. The new `/account` page has password change (current password required, rate limited, audited) and *Sign out everywhere*; both end every session.
+- **Small fixes:** ids in action schemas are now length-limited, and staff can mark notifications read in read-only gyms (but not in support mode).
+
+Accepted and documented in README §11: no email verification or reset-by-email yet, per-account lockout as a side effect of brute-force protection, no MFA, and database write policies that check the gym but not the role.

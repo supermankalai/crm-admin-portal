@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { loginAndLand } from "./helpers";
 
 const STAFF_PASSWORD = "GymStaff#2026";
 
@@ -76,4 +77,47 @@ test("repeated failed logins are rate limited", async ({ page }) => {
   // 6th attempt — even with the right password — is blocked for this email + IP.
   await login(page, "frontdesk1@pulsefitness.example", STAFF_PASSWORD);
   await expect(page.locator("form").getByRole("alert")).toContainText("Too many sign-in attempts");
+});
+
+test("a crafted callbackUrl can't send a signed-in user to another site", async ({ page }) => {
+  await loginAndLand(page, "owner@irontemple.example", /\/dashboard/);
+  for (const target of ["/%09/evil.example", "//evil.example", "/%5Cevil.example"]) {
+    await page.goto(`/login?callbackUrl=${target}`);
+    expect(new URL(page.url()).hostname).toBe("localhost");
+  }
+});
+
+test.describe("account security", () => {
+  test.describe.configure({ timeout: 90_000 });
+
+  test("changing the password signs the user out on every device", async ({ page, browser }) => {
+    const email = "frontdesk2@irontemple.example";
+    await loginAndLand(page, email, /\/dashboard/);
+    const other = await browser.newContext();
+    const otherPage = await other.newPage();
+    await loginAndLand(otherPage, email, /\/dashboard/);
+
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Account & security" }).click();
+    await page.getByLabel("Current password").fill("wrong-password");
+    await page.getByLabel("New password", { exact: true }).fill("Brand-New-Pass1");
+    await page.getByLabel("Confirm new password").fill("Brand-New-Pass1");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "current password is incorrect" })).toBeVisible();
+
+    await page.getByLabel("Current password").fill(STAFF_PASSWORD);
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page).toHaveURL(/\/login\?notice=password-changed/, { timeout: 20_000 });
+    await expect(page.getByRole("status").filter({ hasText: "Your password was changed" })).toBeVisible();
+
+    // The other device's session no longer works.
+    await otherPage.reload();
+    await expect(otherPage).toHaveURL(/\/login/);
+    await other.close();
+
+    await login(page, email, STAFF_PASSWORD); // the old password no longer works
+    await expect(page.locator("form").getByRole("alert")).toHaveText("Invalid email or password.");
+    await login(page, email, "Brand-New-Pass1");
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+  });
 });

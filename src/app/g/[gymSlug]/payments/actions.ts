@@ -28,7 +28,7 @@ export const recordPaymentAction = gymAction({ permission: "payments.record", sc
   return result;
 });
 
-export const refundPaymentAction = gymAction({ permission: "payments.refund", schema: refundSchema.extend({ invoiceId: z.string().optional() }), write: true }, async (ctx, input) => {
+export const refundPaymentAction = gymAction({ permission: "payments.refund", schema: refundSchema.extend({ invoiceId: z.string().max(64).optional() }), write: true }, async (ctx, input) => {
   const result = await refundPayment(ctx, { paymentId: input.paymentId, amount: input.amount, reason: input.reason, cancelMembership: input.cancelMembership }, await getRequestMeta());
   refresh(ctx.gym.slug, undefined, input.invoiceId);
   return result!;

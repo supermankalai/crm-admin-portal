@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ChartColumn,
   Check,
+  KeyRound,
   ChevronsUpDown,
   ClipboardList,
   CreditCard,
@@ -224,6 +225,11 @@ export function GymShell({ gym, notifications, roleLabel, user, nav, gyms, banne
               <DropdownMenuItem asChild>
                 <Link href="/select-gym">
                   <Building2 /> All my gyms
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/account">
+                  <KeyRound /> Account &amp; security
                 </Link>
               </DropdownMenuItem>
               {user.isSuperAdmin && (

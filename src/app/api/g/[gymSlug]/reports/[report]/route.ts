@@ -14,7 +14,7 @@ import { getGymAccess } from "@/server/tenant";
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ gymSlug: string; report: string }> }) {
   const { gymSlug, report } = await params;
-  const ctx = await getGymAccess(gymSlug);
+  const ctx = await getGymAccess(gymSlug, `GET /api/g/${gymSlug}/reports/${report}`);
   if (!ctx || !(REPORT_KINDS as readonly string[]).includes(report)) return new NextResponse("Not found", { status: 404 });
 
   const sp = request.nextUrl.searchParams;

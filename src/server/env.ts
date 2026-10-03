@@ -63,6 +63,9 @@ const envSchema = z
     // proxy that sets X-Forwarded-For, or for automated test runs.
     RATE_LIMIT_LOGIN_PER_IP: z.coerce.number().int().positive().default(30),
     RATE_LIMIT_SIGNUP_PER_IP: z.coerce.number().int().positive().default(5),
+    // How many reverse proxies in front of the app append to X-Forwarded-For. The client IP is
+    // taken that many entries from the right; anything further left is client-supplied.
+    TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   })
   .superRefine((env, ctx) => {
     if (!env.ENCRYPTION_KEYS.has(env.ENCRYPTION_ACTIVE_KEY_VERSION)) {

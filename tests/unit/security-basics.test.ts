@@ -60,11 +60,27 @@ describe("log redaction", () => {
 });
 
 describe("post-login redirect", () => {
-  it.each(["https://evil.example", "//evil.example", "/\\evil.example", 42, undefined])("rejects %s", (value) => {
+  // Browsers strip tab/CR/LF from URLs, so "/\t/evil.example" would otherwise become "//evil.example".
+  it.each(["https://evil.example", "//evil.example", "/\\evil.example", "/\t/evil.example", "/\n/evil.example", "/\r//evil.example", "/ /evil.example", 42, undefined])("rejects %j", (value) => {
     expect(safeRedirectPath(value, "/")).toBe("/");
   });
 
   it("allows same-origin paths", () => {
     expect(safeRedirectPath("/g/iron-temple/members?page=2")).toBe("/g/iron-temple/members?page=2");
+  });
+});
+
+describe("client IP from X-Forwarded-For", () => {
+  it("trusts only the configured number of proxy hops, counted from the right", async () => {
+    const { clientIp } = await import("@/lib/client-ip");
+    // One proxy that appends: the client may have sent a fake first entry.
+    expect(clientIp("6.6.6.6, 203.0.113.9", 1)).toBe("203.0.113.9");
+    expect(clientIp("6.6.6.6, 203.0.113.9, 10.0.0.2", 2)).toBe("203.0.113.9");
+    expect(clientIp("203.0.113.9", 2)).toBeNull(); // shorter than the proxy chain: not trustworthy
+    expect(clientIp("203.0.113.9", 0)).toBeNull();
+    expect(clientIp(null, 1)).toBeNull();
+    expect(clientIp("not-an-ip", 1)).toBeNull();
+    expect(clientIp("::ffff:127.0.0.1", 1)).toBe("127.0.0.1");
+    expect(clientIp("[2001:db8::1]", 1)).toBe("2001:db8::1");
   });
 });

@@ -21,7 +21,7 @@ export const CURRENCIES = [
   { code: "AUD", label: "Australian dollar" },
   { code: "CAD", label: "Canadian dollar" },
 ] as const;
-const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [string, ...string[]];
+export const CURRENCY_CODES = CURRENCIES.map((c) => c.code) as [(typeof CURRENCIES)[number]["code"], ...(typeof CURRENCIES)[number]["code"][]];
 
 /**
  * IANA time zones for the picker. The runtime's list uses ICU's canonical names (it may list

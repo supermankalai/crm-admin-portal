@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: Phase 7 of 8 complete.** Done so far:
+> **Build status: all 8 phases complete.**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -10,8 +10,9 @@ One platform, many gyms. Each gym subscribes to a plan and manages only its own 
 > - **Phase 5:** payments and check-in
 > - **Phase 6:** classes, waitlists, staff invitations, trainer profiles and schedules
 > - **Phase 7:** reports with CSV export, notifications, settings and the gym audit log
+> - **Phase 8:** security review and fixes, isolation tests across every table, account security (password change, sign out everywhere), final README
 >
-> Phase 8 is the security review, more tenant-isolation and end-to-end tests, and the final README. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture, and [§10](#10-security-model) and [§11](#11-production-checklist-and-known-limitations) before deploying.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -73,7 +74,8 @@ All variables are validated with Zod at startup ([src/server/env.ts](src/server/
 | `STORAGE_DIR` | — | Upload root. Files go to `STORAGE_DIR/<gymId>/…`. |
 | `EMAIL_PROVIDER`, `EMAIL_FROM` | ✓ | `dev-outbox` writes emails to `.dev-outbox/` |
 | `LOG_LEVEL` | — | `trace`, `debug`, `info`, `warn` or `error` |
-| `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-email login limit (5 per 15 minutes) is fixed. |
+| `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-account limits are fixed: 5 login attempts per 15 minutes from one IP and 20 from all IPs combined. |
+| `TRUSTED_PROXY_HOPS` | — | How many reverse proxies in front of the app append to `X-Forwarded-For` (default `1`). The client IP is read that many entries from the right; anything further left is client-supplied and ignored. |
 
 `.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
 
@@ -358,7 +360,7 @@ Each gym also gets:
 |---|---|
 | `npm test` | Unit and integration tests (Vitest) |
 | `npm run test:unit` | Business rules, encryption, env validation, password hashing, redaction |
-| `npm run test:integration` | RLS and tenant isolation against a real PostgreSQL (`gym_saas_test`), through the restricted `gym_app` role |
+| `npm run test:integration` | Services, RLS and tenant isolation against a real PostgreSQL (`gym_saas_test`), through the restricted `gym_app` role. [isolation-matrix.test.ts](tests/integration/isolation-matrix.test.ts) loads the full seed and checks **every** table that has a `gymId` column, found from the database catalog, so a new table is covered automatically. For each one it checks that RLS is enabled and forced, that its policies are bound to the current gym, and that gym A cannot read, update, delete, insert into or move rows into gym B. It also checks that support access cannot write. |
 | `npm run test:e2e` | Playwright against `next dev` on port 3100 (its own `.next-e2e` build directory, so it can run alongside `npm run dev`), using `gym_saas_test` reset and seeded per run |
 
 The test databases are rebuilt from migrations on every run. The suites refuse any database whose name doesn't end in `_test`, so your dev data is never touched. First time only: `npx playwright install chromium`.
@@ -399,3 +401,64 @@ src/components/      shadcn/ui and layout components
 tests/               unit/, integration/ (real Postgres), e2e/ (Playwright), support/
 docs/DESIGN.md       approved architecture
 ```
+
+## 10. Security model
+
+**Tenant isolation, in three layers:**
+1. **PostgreSQL RLS** on every table.
+   - The app connects as `gym_app` (no superuser, no BYPASSRLS), and every query runs in a transaction that sets `app.current_gym_id` / `app.current_user_id` with `SET LOCAL`.
+   - Without a gym context, tenant tables return nothing.
+   - Cross-table references use composite `(gymId, id)` foreign keys, so a row can never point at another gym's row.
+   - `gymId` can't be changed after a row is created.
+2. **A tenant-scoped data layer.** Services receive a `TenantContext`, which is built only from the session and a database membership check. The gym id never comes from the URL or the request body; the slug only selects which of the user's gyms to use.
+3. **Server checks on every entry point.**
+   - Pages call `requireGymAccess`; server actions go through `gymAction`, which checks the permission, read-only state and Zod input; API routes call `getGymAccess`.
+   - Other gyms' pages return 404, not 403, so slugs can't be probed.
+
+**Roles** are enforced on the server from one permission matrix ([src/domain/permissions.ts](src/domain/permissions.ts)).
+- Hiding things in the UI is cosmetic only.
+- Managers can only act on the roles they're allowed to assign (front desk and trainers).
+- Trainers see only their own clients and classes.
+- Super admins have no tenant access except through an explicit, time-limited, **read-only** support session. Every page, action and API call made during one is written to that gym's audit log.
+
+**Accounts and sessions:**
+- Passwords are hashed with argon2id. Unknown emails take the same time as wrong passwords.
+- Logins are rate limited per IP, per account and IP, and per account.
+- Sessions are JWTs re-validated against the database on every request.
+- Changing your password or using *Sign out everywhere* (`/account`) bumps `sessionVersion`, which ends every existing session at once.
+- Removing someone from a gym ends their access to it on their next request.
+
+**Data protection:**
+- Personal fields are encrypted with AES-256-GCM, with key versions and the record bound into the ciphertext.
+- Phone search uses an HMAC blind index.
+- Logs and audit entries redact personal data and secrets.
+- Invitation and other tokens are random, single-use and stored only as hashes.
+- Money is stored as integers.
+- Audit logs, refunds and check-ins are append-only.
+- Members, plans and payments use soft delete.
+
+**Web:**
+- A CSP with a per-request nonce, `frame-ancestors 'none'`, HSTS (in production), `nosniff` and COOP.
+- CSRF protection from Auth.js and Next's Origin check on server actions.
+- Post-login redirects are restricted to same-origin paths.
+- Uploads are type-checked by their bytes (JPEG, PNG or WebP, up to 2 MB), stored outside `public/`, and served only to the gym's own staff.
+- CSV exports neutralise spreadsheet formulas.
+
+## 11. Production checklist and known limitations
+
+Before going live:
+- Run behind a reverse proxy that terminates TLS and **appends** the client address to `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies, and `APP_URL` to the `https://` address.
+- Keep `ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` and `AUTH_SECRET` in a secrets manager (or a KMS), never in the repository or next to backups. Rotate keys with `npm run crypto:rotate`.
+- Schedule `npm run jobs:run` every few minutes. It expires subscriptions, cleans up rate-limit buckets and generates alerts.
+- Schedule backups and test restores (§8).
+- Ship logs to a central store and alert on `error` entries.
+- Point `STORAGE_DIR` at durable, backed-up storage, or implement the `StorageProvider` interface for S3 or GCS.
+- Replace the dev email outbox with a real provider behind the `EmailProvider` interface.
+- Run `npm audit` on each release (see the notes in [docs/DESIGN.md](docs/DESIGN.md)).
+
+Known limitations, deliberately out of scope for this build:
+- **No email verification or password reset by email.** Sign-up accepts any address, and a forgotten password needs an administrator. Both need a real email provider; the `PasswordResetToken` table and rate limits are already in place.
+- **Account lockout by brute force.** The per-account login limit (20 attempts per 15 minutes) also blocks the real owner while someone else is hammering the account. Mitigations are MFA, CAPTCHA or an email unlock link.
+- **No MFA.** It is recommended for owners and super admins.
+- **Billing is manual.** Payments go through the `BillingProvider` interface; there is no card processor yet.
+- **Database write policies check the gym, not the role.** RLS guarantees that one gym can never touch another's data. Which role may change what *inside* a gym is enforced by the app's permission checks, which are covered by tests.

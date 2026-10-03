@@ -21,7 +21,12 @@ export default async function SelectGymPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Welcome, {user.name}</h1>
-          <p className="text-sm text-muted-foreground">{user.email}</p>
+          <p className="text-sm text-muted-foreground">
+            {user.email} ·{" "}
+            <Link href="/account" className="underline-offset-4 hover:underline">
+              Account &amp; security
+            </Link>
+          </p>
         </div>
         <form action={logoutAction}>
           <Button variant="outline" size="sm" type="submit">

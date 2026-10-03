@@ -1,7 +1,8 @@
 import "server-only";
 import { logger } from "@/server/logger";
 import { generateGymNotifications } from "@/server/notifications";
-import { assertCan, assertWritable, inTenant } from "@/server/tenant/guards";
+import { ForbiddenError } from "@/server/errors";
+import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 
 /**
@@ -58,7 +59,7 @@ export async function listNotifications(ctx: TenantContext, opts: { unreadOnly: 
 
 export async function markNotificationRead(ctx: TenantContext, id: string) {
   assertCan(ctx, "notifications.view");
-  assertWritable(ctx);
+  if (ctx.supportSessionId) throw new ForbiddenError("Support access is read-only.");
   return inTenant(ctx, async (tx) => {
     const n = await tx.notification.findFirst({ where: { id, recipientUserId: ctx.user.id }, select: { id: true, readAt: true, entityType: true, entityId: true } });
     if (!n) return null;
@@ -69,7 +70,7 @@ export async function markNotificationRead(ctx: TenantContext, id: string) {
 
 export async function markAllNotificationsRead(ctx: TenantContext) {
   assertCan(ctx, "notifications.view");
-  assertWritable(ctx);
+  if (ctx.supportSessionId) throw new ForbiddenError("Support access is read-only.");
   const r = await inTenant(ctx, (tx) => tx.notification.updateMany({ where: { recipientUserId: ctx.user.id, readAt: null }, data: { readAt: new Date() } }));
   return { marked: r.count };
 }

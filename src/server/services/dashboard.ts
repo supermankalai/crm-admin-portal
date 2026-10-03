@@ -50,16 +50,21 @@ export async function getDashboard(ctx: TenantContext) {
     const newThisMonth = await tx.member.count({ where: { deletedAt: null, joinedAt: { gte: month.start, lt: month.end } } });
     const checkInsToday = await tx.checkIn.count({ where: { result: "ALLOWED", checkedInAt: { gte: day.start, lt: day.end } } });
 
-    // Expiring in the next 7 days and not already renewed by a later membership.
+    // Expiring in the next 7 days and not already renewed by a later membership. Staff without
+    // members.viewAll (trainers) only see their own assigned clients, as everywhere else.
+    const ownClientsOnly = !ctx.permissions.has("members.viewAll");
     const expiring = await tx.$queryRawUnsafe<{ membershipId: string; memberId: string; name: string; plan: string; endDate: Date }[]>(
       `SELECT s.id AS "membershipId", m.id AS "memberId", m."firstName" || ' ' || m."lastName" AS name, p.name AS plan, s."endDate"
          FROM "Membership" s JOIN "Member" m ON m.id = s."memberId" JOIN "MembershipPlan" p ON p.id = s."planId"
         WHERE m."deletedAt" IS NULL AND ${ACTIVE_ON("s", "$1::date")} AND s."endDate" <= $2::date
           AND NOT EXISTS (SELECT 1 FROM "Membership" n WHERE n."memberId" = s."memberId" AND n.id <> s.id
                           AND n."startDate" > s."startDate" AND n.status <> 'CANCELLED')
+          AND (NOT $3::boolean OR EXISTS (SELECT 1 FROM "TrainerClient" tc WHERE tc."memberId" = m.id AND tc."trainerId" = $4))
         ORDER BY s."endDate", name`,
       today,
-      addDays(today, 7)
+      addDays(today, 7),
+      ownClientsOnly,
+      ctx.staffId ?? "__none__"
     );
 
     const sessionWhere = { startsAt: { gte: new Date() }, status: "SCHEDULED" as const, ...(ownClassesOnly ? { trainerId: ctx.staffId ?? "__none__" } : {}) };

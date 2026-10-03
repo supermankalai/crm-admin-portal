@@ -19,6 +19,7 @@ export const RATE_LIMITS = {
   get signupPerIp() {
     return { name: "signup:ip", limit: getEnv().RATE_LIMIT_SIGNUP_PER_IP, windowSeconds: 60 * 60 };
   },
+  passwordChangePerUser: { name: "password:user", limit: 5, windowSeconds: 15 * 60 },
   passwordResetPerIp: { name: "reset:ip", limit: 5, windowSeconds: 60 * 60 },
   passwordResetPerEmail: { name: "reset:email", limit: 3, windowSeconds: 60 * 60 },
 } satisfies Record<string, RateLimitRule>;

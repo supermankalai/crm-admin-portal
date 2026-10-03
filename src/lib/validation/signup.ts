@@ -2,19 +2,12 @@ import { z } from "zod";
 import { slugProblem } from "@/domain/slug";
 import { emailSchema, newPasswordSchema } from "./auth";
 
-export const SUPPORTED_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD"] as const;
+import { CURRENCY_CODES, isTimeZone } from "./settings";
 
-const timezone = z
-  .string()
-  .min(1)
-  .refine((tz) => {
-    try {
-      new Intl.DateTimeFormat("en", { timeZone: tz });
-      return true;
-    } catch {
-      return false;
-    }
-  }, "Choose a valid time zone");
+/** Same lists as gym settings, so a gym can always be saved with what it signed up with. */
+export const SUPPORTED_CURRENCIES = CURRENCY_CODES;
+
+const timezone = z.string().min(1).refine(isTimeZone, "Choose a valid time zone");
 
 export const gymDetailsSchema = z.object({
   gymName: z.string().trim().min(2, "Enter your gym's name").max(80),

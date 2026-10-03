@@ -8,7 +8,7 @@ import { getGymAccess } from "@/server/tenant";
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ gymSlug: string; fileId: string }> }) {
   const { gymSlug, fileId } = await params;
-  const ctx = await getGymAccess(gymSlug);
+  const ctx = await getGymAccess(gymSlug, `GET /api/g/${gymSlug}/files/${fileId}`);
   if (!ctx || !/^[\w-]{10,64}$/.test(fileId)) return new NextResponse("Not found", { status: 404 });
 
   const file = await readGymFile(ctx, fileId);

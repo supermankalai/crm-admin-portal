@@ -158,6 +158,11 @@ export async function updateSession(ctx: TenantContext, input: { sessionId: stri
     if (changesStaffing && !ctx.permissions.has("classes.manage")) throw new ForbiddenError("Only managers can change the trainer or room.");
     if (session.status !== "SCHEDULED" || session.endsAt <= new Date()) throw new ValidationError("Only upcoming classes can be changed.");
 
+    if (input.trainerId !== session.trainerId) {
+      // Same rule as scheduling: only active staff who can teach.
+      const trainer = await tx.staffMember.findFirst({ where: { id: input.trainerId, status: "ACTIVE", role: { in: ["TRAINER", "MANAGER", "OWNER"] } }, select: { id: true } });
+      if (!trainer) throw new ValidationError("Choose a trainer.", { trainerId: ["Choose an active trainer"] });
+    }
     const room = await tx.room.findUnique({ where: { id: input.roomId }, select: { capacity: true, name: true } });
     if (!room) throw new ValidationError("Choose a room.");
     if (input.capacity > room.capacity) throw new ValidationError(`${room.name} holds at most ${room.capacity} people.`, { capacity: [`At most ${room.capacity}`] });

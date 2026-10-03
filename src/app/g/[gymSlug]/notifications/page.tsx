@@ -30,7 +30,7 @@ export default async function NotificationsPage({ params, searchParams }: { para
   await refreshNotifications(ctx);
   const result = await listNotifications(ctx, { unreadOnly, page: Number(sp.page) || 1 });
   const base = `/g/${ctx.gym.slug}/notifications`;
-  const canWrite = ctx.access.writable && !ctx.supportSessionId;
+  const canWrite = !ctx.supportSessionId; // marking read works in read-only gyms too
 
   return (
     <>

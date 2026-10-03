@@ -83,6 +83,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         await reset(RATE_LIMITS.loginPerEmailIp, emailHash, ip);
+        await reset(RATE_LIMITS.loginPerEmail, emailHash);
         await withUser(user.id, async (tx) => {
           await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
           await recordPlatformAudit(tx, { action: "auth.login", actorUserId: user.id, meta });

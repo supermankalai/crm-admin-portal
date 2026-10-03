@@ -56,7 +56,7 @@ export const addShiftAction = gymAction({ permission: "staff.invite", schema: sh
   return r;
 });
 
-export const deleteShiftAction = gymAction({ permission: "staff.invite", schema: shiftIdSchema.extend({ staffId: z.string() }), write: true }, async (ctx, input) => {
+export const deleteShiftAction = gymAction({ permission: "staff.invite", schema: shiftIdSchema.extend({ staffId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   await deleteShift(ctx, input.shiftId, await getRequestMeta());
   refresh(ctx.gym.slug, input.staffId);
   return { deleted: true };

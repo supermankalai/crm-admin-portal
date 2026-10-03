@@ -21,13 +21,16 @@ async function resolveForUser(user: SessionUser, gymSlug: string): Promise<Tenan
   return supportSessionId ? resolveSupportTenant(user, gymSlug, supportSessionId) : null;
 }
 
-/** Every request made under support access is written to the gym's own audit log. */
-async function logSupportView(ctx: TenantContext) {
+/**
+ * Every request made under support access — page, server action or API route — is written to the
+ * gym's own audit log. Pages pass the path the proxy set (it overwrites any client value);
+ * actions and routes pass what they are.
+ */
+async function logSupportView(ctx: TenantContext, via?: string) {
   const h = await headers();
+  const path = via ?? h.get("x-pathname") ?? "unknown";
   try {
-    await inTenant(ctx, (tx) =>
-      recordAudit(tx, ctx, { action: "support.view", entityType: "Gym", entityId: ctx.gym.id, changes: { path: h.get("x-pathname") ?? "unknown" } }, metaFromHeaders(h))
-    );
+    await inTenant(ctx, (tx) => recordAudit(tx, ctx, { action: "support.view", entityType: "Gym", entityId: ctx.gym.id, changes: { path: path.slice(0, 200) } }, metaFromHeaders(h)));
   } catch (error) {
     logger.error("support view audit failed", { error });
     throw error; // access is only allowed if it can be audited
@@ -48,9 +51,14 @@ export const requireGymAccess = cache(async (gymSlug: string): Promise<TenantCon
   return ctx;
 });
 
-/** Route handlers and server actions: same check, but returns null instead of redirecting. */
-export async function getGymAccess(gymSlug: string): Promise<TenantContext | null> {
+/**
+ * Route handlers and server actions: same check, but returns null instead of redirecting.
+ * `via` names the action or route for the support-access audit trail.
+ */
+export async function getGymAccess(gymSlug: string, via: string): Promise<TenantContext | null> {
   const user = await getSessionUser();
   if (!user) return null;
-  return resolveForUser(user, gymSlug);
+  const ctx = await resolveForUser(user, gymSlug);
+  if (ctx?.supportSessionId) await logSupportView(ctx, via);
+  return ctx;
 }

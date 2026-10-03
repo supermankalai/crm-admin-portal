@@ -50,19 +50,19 @@ export const addNoteAction = gymAction({ permission: "members.notes", schema: me
   return result;
 });
 
-export const freezeMembershipAction = gymAction({ permission: "members.edit", schema: freezeSchema.extend({ memberId: z.string() }), write: true }, async (ctx, input) => {
+export const freezeMembershipAction = gymAction({ permission: "members.edit", schema: freezeSchema.extend({ memberId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   const result = await freezeMembership(ctx, input.membershipId, input.days, await getRequestMeta());
   refresh(ctx.gym.slug, input.memberId);
   return result;
 });
 
-export const unfreezeMembershipAction = gymAction({ permission: "members.edit", schema: membershipIdSchema.extend({ memberId: z.string() }), write: true }, async (ctx, input) => {
+export const unfreezeMembershipAction = gymAction({ permission: "members.edit", schema: membershipIdSchema.extend({ memberId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   const result = await unfreezeMembership(ctx, input.membershipId, await getRequestMeta());
   refresh(ctx.gym.slug, input.memberId);
   return { newEndDate: result.newEndDate };
 });
 
-export const cancelMembershipAction = gymAction({ permission: "members.edit", schema: cancelMembershipSchema.extend({ memberId: z.string() }), write: true }, async (ctx, input) => {
+export const cancelMembershipAction = gymAction({ permission: "members.edit", schema: cancelMembershipSchema.extend({ memberId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   const result = await cancelMembership(ctx, input.membershipId, input.reason, await getRequestMeta());
   refresh(ctx.gym.slug, input.memberId);
   return result;

@@ -51,13 +51,13 @@ export const bookMemberAction = gymAction({ permission: "classes.view", schema: 
   return r;
 });
 
-export const cancelBookingAction = gymAction({ permission: "classes.view", schema: bookingIdSchema.extend({ sessionId: z.string() }), write: true }, async (ctx, input) => {
+export const cancelBookingAction = gymAction({ permission: "classes.view", schema: bookingIdSchema.extend({ sessionId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   const r = await cancelBooking(ctx, input.bookingId, await getRequestMeta());
   refresh(ctx.gym.slug, input.sessionId);
   return r;
 });
 
-export const markAttendanceAction = gymAction({ permission: "classes.view", schema: attendanceSchema.extend({ sessionId: z.string() }), write: true }, async (ctx, input) => {
+export const markAttendanceAction = gymAction({ permission: "classes.view", schema: attendanceSchema.extend({ sessionId: z.string().min(1).max(64) }), write: true }, async (ctx, input) => {
   const r = await markAttendance(ctx, input.bookingId, input.attended, await getRequestMeta());
   refresh(ctx.gym.slug, input.sessionId);
   return r;

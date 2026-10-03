@@ -3,13 +3,15 @@ import Link from "next/link";
 import { Dumbbell } from "lucide-react";
 import { getSessionUser } from "@/server/auth/session";
 import { listPublicPlans } from "@/server/services/platform-plans";
+import { timeZones } from "@/lib/validation/settings";
 import { SignupWizard } from "./signup-wizard";
 
 export const metadata: Metadata = { title: "Start your free trial" };
 
 export default async function SignupPage() {
   const [user, plans] = await Promise.all([getSessionUser(), listPublicPlans()]);
-  const timezones = Intl.supportedValuesOf("timeZone");
+  // Includes the default (Asia/Kolkata), which ICU lists only under its old name.
+  const timezones = timeZones("Asia/Kolkata");
 
   return (
     <main className="mx-auto flex min-h-svh max-w-3xl flex-col gap-6 px-4 py-10 sm:px-6">

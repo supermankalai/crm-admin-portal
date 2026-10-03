@@ -24,6 +24,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <div className="flex-1" />
           <span className="hidden text-sm text-muted-foreground md:inline">{admin.email}</span>
           <ThemeToggle />
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/account">Account</Link>
+          </Button>
           <form action={logoutAction}>
             <Button variant="outline" size="sm" type="submit">
               Log out

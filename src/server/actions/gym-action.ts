@@ -30,7 +30,7 @@ export function gymAction<S extends z.ZodType, R>(
   return async (gymSlug: string, rawInput: unknown): Promise<ActionResult<R>> => {
     let ctx: TenantContext | null = null;
     try {
-      ctx = await getGymAccess(String(gymSlug));
+      ctx = await getGymAccess(String(gymSlug), `action:${options.permission}`);
       if (!ctx) throw new NotFoundError("This gym was not found or you no longer have access to it.");
       assertCan(ctx, options.permission);
       if (options.write) assertWritable(ctx);

@@ -9,8 +9,14 @@ import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
-  const { callbackUrl } = await searchParams;
+const NOTICES: Record<string, string> = {
+  "password-changed": "Your password was changed and you were signed out everywhere. Sign in with your new password.",
+  "signed-out-everywhere": "You were signed out on all devices.",
+};
+
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string; notice?: string }> }) {
+  const { callbackUrl, notice } = await searchParams;
+  const noticeText = notice ? NOTICES[notice] : undefined;
   if (await getSessionUser()) redirect(safeRedirectPath(callbackUrl, "/"));
 
   return (
@@ -40,6 +46,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <CardDescription>Use your staff or platform account.</CardDescription>
           </CardHeader>
           <CardContent>
+            {noticeText && (
+              <p role="status" className="mb-4 rounded-md bg-primary/10 px-3 py-2 text-sm">
+                {noticeText}
+              </p>
+            )}
             <LoginForm callbackUrl={safeRedirectPath(callbackUrl, "/")} />
             <p className="mt-4 text-center text-sm text-muted-foreground">
               New to FitCRM?{" "}

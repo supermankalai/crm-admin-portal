@@ -67,7 +67,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
                   phone: settings.gym.phone ?? "",
                   address: settings.gym.address ?? "",
                   timezone: settings.gym.timezone,
-                  currency: settings.gym.currency,
+                  currency: settings.gym.currency as (typeof CURRENCIES)[number]["code"],
                   taxRate: formatTaxPercent(settings.gym.taxRateBps),
                 }}
               />
