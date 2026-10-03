@@ -3,6 +3,19 @@
 export const PASSWORDS = {
   superAdmin: "SuperAdmin#2026",
   staff: "GymStaff#2026",
+  member: "Member#2026",
+} as const;
+
+/** Member app test logins (see README). */
+export const MEMBER_APP = {
+  accountsPerGym: 20,
+  /** One person who is a member of two gyms (gym switching). */
+  shared: { email: "alex.member@fitcrm.example", firstName: "Alex", lastName: "Fernandes", gyms: ["iron-temple", "zen-strength"] as const },
+  /** A phone-only member login (one-time codes by SMS) at Iron Temple. */
+  phoneOnly: { gym: "iron-temple", phone: "+919800000022", firstName: "Ravi", lastName: "Phone" },
+  /** Pending invites with known secrets at Iron Temple, to try the redeem flow. */
+  inviteCode: "WELC-OME2",
+  inviteLinkToken: "demo-invite-iron-temple-member-24",
 } as const;
 
 export const SUPER_ADMIN = { email: "superadmin@fitcrm.example", name: "Asha Platform" };
@@ -22,6 +35,8 @@ export const PLATFORM_PLANS = [
     featureReports: false,
     featureCsvExport: false,
     featureClassBookings: true,
+    featureMobileApp: false,
+    featureMemberApp: false,
     sortOrder: 1,
   },
   {
@@ -35,6 +50,8 @@ export const PLATFORM_PLANS = [
     featureReports: true,
     featureCsvExport: false,
     featureClassBookings: true,
+    featureMobileApp: true,
+    featureMemberApp: true,
     sortOrder: 2,
   },
   {
@@ -48,6 +65,8 @@ export const PLATFORM_PLANS = [
     featureReports: true,
     featureCsvExport: true,
     featureClassBookings: true,
+    featureMobileApp: true,
+    featureMemberApp: true,
     sortOrder: 3,
   },
 ] as const;

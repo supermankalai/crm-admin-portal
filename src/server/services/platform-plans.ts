@@ -19,6 +19,8 @@ export function listPublicPlans() {
         featureReports: true,
         featureCsvExport: true,
         featureClassBookings: true,
+        featureMobileApp: true,
+        featureMemberApp: true,
       },
     })
   );

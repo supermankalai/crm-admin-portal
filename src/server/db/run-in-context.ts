@@ -11,6 +11,8 @@ export type DbContext = {
   gymId?: string | null;
   supportSessionId?: string | null;
   platformAdmin?: boolean;
+  /** Member app requests only; the database re-validates it (app_current_member_id()). */
+  memberId?: string | null;
 };
 
 export type Tx = Prisma.TransactionClient;
@@ -33,7 +35,8 @@ export async function runInContext<T>(
         SELECT set_config('app.current_user_id', ${ctx.userId ?? ""}, true),
                set_config('app.current_gym_id', ${ctx.gymId ?? ""}, true),
                set_config('app.support_session_id', ${ctx.supportSessionId ?? ""}, true),
-               set_config('app.platform_admin', ${ctx.platformAdmin ? "on" : ""}, true)`;
+               set_config('app.platform_admin', ${ctx.platformAdmin ? "on" : ""}, true),
+               set_config('app.current_member_id', ${ctx.memberId ?? ""}, true)`;
       return fn(tx);
     },
     { isolationLevel: options.isolationLevel, timeout: options.timeoutMs ?? 15_000, maxWait: 5_000 }

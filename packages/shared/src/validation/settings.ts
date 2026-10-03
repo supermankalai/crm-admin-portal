@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalisePhone } from "@/domain/phone";
+import { normalisePhone } from "../domain/phone";
 import { emailSchema } from "./auth";
 
 const id = z.string().trim().min(1).max(64);

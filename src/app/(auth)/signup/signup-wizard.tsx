@@ -36,6 +36,8 @@ type Plan = {
   featureReports: boolean;
   featureCsvExport: boolean;
   featureClassBookings: boolean;
+  featureMobileApp: boolean;
+  featureMemberApp: boolean;
 };
 
 type StepKey = "gym" | "owner" | "plan";
@@ -280,6 +282,8 @@ export function SignupWizard({
                         <li className={plan.featureClassBookings ? "" : "text-muted-foreground line-through"}>Class bookings</li>
                         <li className={plan.featureReports ? "" : "text-muted-foreground line-through"}>Reports</li>
                         <li className={plan.featureCsvExport ? "" : "text-muted-foreground line-through"}>CSV export</li>
+                        <li className={plan.featureMobileApp ? "" : "text-muted-foreground line-through"}>Staff mobile app</li>
+                        <li className={plan.featureMemberApp ? "" : "text-muted-foreground line-through"}>Member app</li>
                       </ul>
                     </label>
                   );

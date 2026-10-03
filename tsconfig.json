@@ -23,6 +23,15 @@
       }
     ],
     "paths": {
+      "@fitcrm/shared/*": [
+        "./packages/shared/src/*"
+      ],
+      "@/domain/*": [
+        "./packages/shared/src/domain/*"
+      ],
+      "@/lib/validation/*": [
+        "./packages/shared/src/validation/*"
+      ],
       "@/*": [
         "./src/*"
       ]

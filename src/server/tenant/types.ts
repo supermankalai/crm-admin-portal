@@ -7,7 +7,7 @@ export type PlanSummary = {
   maxMembers: number;
   maxStaff: number;
   maxLocations: number;
-  features: { reports: boolean; csvExport: boolean; classBookings: boolean };
+  features: { reports: boolean; csvExport: boolean; classBookings: boolean; mobileApp: boolean; memberApp: boolean };
 };
 
 /**

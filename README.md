@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 phases complete.**
+> **Build status: all 8 web phases complete. Mobile app: Phase 1 of 7 (API foundation) done.**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -75,6 +75,8 @@ All variables are validated with Zod at startup ([src/server/env.ts](src/server/
 | `EMAIL_PROVIDER`, `EMAIL_FROM` | ✓ | `dev-outbox` writes emails to `.dev-outbox/` |
 | `LOG_LEVEL` | — | `trace`, `debug`, `info`, `warn` or `error` |
 | `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-account limits are fixed: 5 login attempts per 15 minutes from one IP and 20 from all IPs combined. |
+| `MOBILE_SECRET` | ✓ | 32 random bytes (base64). Separate keys are derived from it for mobile access tokens, one-time codes, QR codes and signed file URLs. |
+| `SMS_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | — | `dev-outbox` (default) or `twilio`; the Twilio values are required when `twilio` is chosen |
 | `TRUSTED_PROXY_HOPS` | — | How many reverse proxies in front of the app append to `X-Forwarded-For` (default `1`). The client IP is read that many entries from the right; anything further left is client-supplied and ignored. |
 
 `.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
@@ -353,6 +355,74 @@ Each gym also gets:
 | `manager1@zenstrength.example` | `GymStaff#2026` | zen-strength | Manager |
 | `frontdesk1@zenstrength.example`, `frontdesk2@zenstrength.example` | `GymStaff#2026` | zen-strength | Front desk |
 | `trainer1@zenstrength.example` … `trainer4@zenstrength.example` | `GymStaff#2026` | zen-strength | Trainer |
+
+**Member app logins** (mobile API; members can't sign in to the web portal):
+
+| Login | Password | Gym | Notes |
+|---|---|---|---|
+| `member1@irontemple.example` … `member20@irontemple.example` | `Member#2026` | iron-temple (Pro: member app ✓) | linked to members M-000001…M-000020 |
+| `member1@zenstrength.example` … `member20@zenstrength.example` | `Member#2026` | zen-strength (Growth: member app ✓) | |
+| `member1@pulsefitness.example` … `member20@pulsefitness.example` | `Member#2026` | pulse-fitness (Starter: **no** member app) | to see the "not in your plan" path |
+| `alex.member@fitcrm.example` | `Member#2026` | iron-temple **and** zen-strength | one person, member of two gyms (gym switching) |
+| `+919800000022` (phone only, no email) | `Member#2026` | iron-temple | one-time code by SMS (dev: `.dev-outbox/*.sms.txt`) |
+
+Pending member app invites at Iron Temple, to try the invite flow:
+- **Front-desk code** `WELC-OME2`, for member #23.
+- **Email link token** `demo-invite-iron-temple-member-24`, for member #24.
+
+Both stay valid for 30 days after seeding.
+
+Staff use the mobile app with their normal logins above. Pro and Growth include the staff mobile app; Starter doesn't.
+
+## 6a. Mobile API (`/api/mobile/v1`)
+
+This is the backend for the FitCRM mobile app. The design is in [docs/MOBILE_DESIGN.md](docs/MOBILE_DESIGN.md).
+- **One contract.** Every endpoint is defined once in [packages/shared/src/api/contract.ts](packages/shared/src/api/contract.ts) with Zod schemas. The server validates requests with it, and every response is filtered through it, so unknown fields never leave the server.
+- **Generated from it:**
+  - the OpenAPI document, served at `/api/mobile/v1/openapi.json`, or written to `packages/shared/openapi.json` with `npm run openapi:generate`;
+  - the typed client in `@fitcrm/shared/api/client`.
+
+**Authentication:**
+- **Sign in** with `POST /auth/login` (email or phone, plus password), with a one-time code (`/auth/otp/request` then `/auth/otp/verify`), or by redeeming a member invite (`/auth/invite/redeem`).
+- **Access tokens** are JWTs that last 15 minutes, signed with a key derived from `MOBILE_SECRET`.
+- **Refresh tokens** rotate on every `/auth/refresh` and only their hash is stored.
+  - **Reusing an already-used refresh token revokes that whole device session.**
+  - Refresh tokens expire after 30 days unused, and a session lasts at most 90 days.
+- **Choosing a gym:** `POST /auth/select-gym` returns a token for one gym, after checking that you're active staff there or have an active member account.
+  - Every request re-checks the device session, your session version, your membership in the gym and the plan's *mobile app* or *member app* feature.
+  - Removing someone, revoking a device or changing a password takes effect on their next request.
+- **Devices:** you can list and revoke yours with `GET /me/devices` and `DELETE /me/devices/{id}`.
+- **Password change and "sign out everywhere"** (web or mobile) end every session on every device.
+
+**Member accounts:**
+- Staff invite a member with `POST /staff/members/{memberId}/app-invite`, choosing one of:
+  - `EMAIL`: a link valid for 7 days;
+  - `SMS`: a link valid for 7 days;
+  - `CODE`: a front-desk code valid for 30 minutes, shown to the staff member once.
+- Each invite is bound to the member's email or phone on record and is single-use. Only its hash is stored.
+- Redeeming either creates a login for exactly that email or phone, or links an existing login after its password is checked.
+- One login can be staff in one gym and a member in another.
+
+**SMS:** set `SMS_PROVIDER=twilio` with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` to send real messages. The default, `dev-outbox`, writes `.sms.txt` files to `.dev-outbox/`, like emails.
+
+**Trying it from the command line** (`npm run dev`, Git Bash):
+
+```bash
+# Sign in as a member
+curl -s localhost:3000/api/mobile/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"identifier":"member1@irontemple.example","password":"Member#2026","device":{"name":"curl","platform":"android"}}'
+# → accessToken, refreshToken, gyms[]. Then scope to the gym:
+curl -s localhost:3000/api/mobile/v1/auth/select-gym -H "Authorization: Bearer <accessToken>" \
+  -H 'Content-Type: application/json' -d '{"gymSlug":"iron-temple"}'
+curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessToken>"
+```
+
+**From a phone on the same Wi-Fi:**
+1. Run `npm run dev:lan`, which binds to every network interface.
+2. Use `http://<your PC's IPv4 from ipconfig>:3000`.
+3. Allow inbound TCP 3000 on the Windows Firewall **Private** profile.
+
+The Android emulator reaches your PC at `http://10.0.2.2:3000`.
 
 ## 7. Tests
 

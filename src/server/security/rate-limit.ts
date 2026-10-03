@@ -19,6 +19,13 @@ export const RATE_LIMITS = {
   get signupPerIp() {
     return { name: "signup:ip", limit: getEnv().RATE_LIMIT_SIGNUP_PER_IP, windowSeconds: 60 * 60 };
   },
+  // Mobile API (identifiers are hashed into the key; never stored in clear).
+  otpRequestPerIdentifier: { name: "otp:request:id", limit: 5, windowSeconds: 15 * 60 },
+  otpRequestPerIp: { name: "otp:request:ip", limit: 20, windowSeconds: 15 * 60 },
+  otpVerifyPerIdentifier: { name: "otp:verify:id", limit: 10, windowSeconds: 15 * 60 },
+  otpVerifyPerIp: { name: "otp:verify:ip", limit: 30, windowSeconds: 15 * 60 },
+  invitePerIp: { name: "member-invite:ip", limit: 30, windowSeconds: 15 * 60 },
+  refreshPerIp: { name: "mobile-refresh:ip", limit: 120, windowSeconds: 15 * 60 },
   passwordChangePerUser: { name: "password:user", limit: 5, windowSeconds: 15 * 60 },
   passwordResetPerIp: { name: "reset:ip", limit: 5, windowSeconds: 60 * 60 },
   passwordResetPerEmail: { name: "reset:email", limit: 3, windowSeconds: 60 * 60 },

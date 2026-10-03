@@ -16,7 +16,7 @@ let w: World;
 let planId: string;
 const meta = { ip: "127.0.0.1", userAgent: "vitest" };
 const days = (d: number) => new Date(Date.now() + d * 86_400_000);
-const user = (u: { id: string; name: string; email: string }, isSuperAdmin = false) => ({ ...u, isSuperAdmin });
+const user = (u: { id: string; name: string; email: string | null }, isSuperAdmin = false) => ({ id: u.id, name: u.name, email: u.email ?? "", isSuperAdmin });
 
 beforeAll(async () => {
   await truncateAll();
@@ -132,7 +132,7 @@ describe("platform analytics are aggregate-only and admin-only", () => {
     ).resolves.toMatchObject({ count: 0 });
     const updated = await updatePlan(
       w.users.superAdmin.id,
-      { code: "TEST", name: "Test", description: "", priceMonthlyMinor: 0, maxMembers: 20, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, isActive: true },
+      { code: "TEST", name: "Test", description: "", priceMonthlyMinor: 0, maxMembers: 20, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, featureMobileApp: true, featureMemberApp: true, isActive: true },
       meta
     );
     expect(updated.maxMembers).toBe(20);

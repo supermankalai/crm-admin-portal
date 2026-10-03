@@ -14,7 +14,8 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed.ts",
+    // react-server: lets the seed use server-only modules (encryption, token hashing) like the app.
+    seed: "tsx --conditions=react-server prisma/seed.ts",
   },
   datasource: { url },
 });

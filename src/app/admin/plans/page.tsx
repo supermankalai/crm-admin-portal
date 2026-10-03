@@ -37,6 +37,8 @@ export default async function AdminPlansPage() {
                   featureReports: p.featureReports,
                   featureCsvExport: p.featureCsvExport,
                   featureClassBookings: p.featureClassBookings,
+                  featureMobileApp: p.featureMobileApp,
+                  featureMemberApp: p.featureMemberApp,
                   isActive: p.isActive,
                 }}
               />

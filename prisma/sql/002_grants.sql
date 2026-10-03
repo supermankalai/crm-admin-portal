@@ -38,5 +38,14 @@ FROM gym_app;
 -- Reachable only through SECURITY DEFINER functions.
 REVOKE ALL ON
   "gym-admin-portal"."PasswordResetToken",
-  "gym-admin-portal"."RateLimitBucket"
+  "gym-admin-portal"."RateLimitBucket",
+  "gym-admin-portal"."MobileRefreshToken",
+  "gym-admin-portal"."LoginOtp"
 FROM gym_app;
+
+-- Mobile device sessions are created only by mobile_session_start(); users may read and revoke
+-- their own (RLS), never insert or delete them directly.
+REVOKE INSERT, DELETE ON "gym-admin-portal"."MobileDeviceSession" FROM gym_app;
+
+-- Member app accounts are disabled, never deleted (the audit trail refers to them).
+REVOKE DELETE ON "gym-admin-portal"."MemberAccount" FROM gym_app;

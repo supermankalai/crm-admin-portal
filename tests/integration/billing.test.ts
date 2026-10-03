@@ -38,7 +38,7 @@ beforeAll(async () => {
   }
   locationA = (await owner.location.create({ data: { gymId: w.gymA.id, name: "Main" } })).id;
   locationB = (await owner.location.create({ data: { gymId: w.gymB.id, name: "Main" } })).id;
-  const u = (x: { id: string; name: string; email: string }) => ({ ...x, isSuperAdmin: false });
+  const u = (x: { id: string; name: string; email: string | null }) => ({ id: x.id, name: x.name, email: x.email ?? "", isSuperAdmin: false });
   ownerA = (await resolveTenant(u(w.users.ownerA), "gym-a"))!;
   deskA = (await resolveTenant(u(w.users.deskA), "gym-a"))!;
   ownerB = (await resolveTenant(u(w.users.ownerB), "gym-b"))!;

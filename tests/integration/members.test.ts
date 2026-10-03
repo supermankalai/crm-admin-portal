@@ -39,7 +39,7 @@ beforeAll(async () => {
   const trainerUser = await owner.user.create({ data: { email: "trainer.a@test.example", name: "Trainer A", passwordHash: "$argon2id$x" } });
   await owner.staffMember.create({ data: { gymId: w.gymA.id, userId: trainerUser.id, role: "TRAINER" } });
 
-  const u = (x: { id: string; name: string; email: string }) => ({ ...x, isSuperAdmin: false });
+  const u = (x: { id: string; name: string; email: string | null }) => ({ id: x.id, name: x.name, email: x.email ?? "", isSuperAdmin: false });
   ownerA = (await resolveTenant(u(w.users.ownerA), "gym-a"))!;
   deskA = (await resolveTenant(u(w.users.deskA), "gym-a"))!;
   trainerA = (await resolveTenant(u(trainerUser), "gym-a"))!;

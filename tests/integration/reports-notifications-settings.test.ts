@@ -17,7 +17,7 @@ import { disconnectAll, getOwnerDb, truncateAll } from "../support/test-db";
 
 const meta = { ip: "127.0.0.1", userAgent: "vitest" };
 const TZ = "Asia/Kolkata";
-const u = (x: { id: string; name: string; email: string }) => ({ ...x, isSuperAdmin: false });
+const u = (x: { id: string; name: string; email: string | null }) => ({ id: x.id, name: x.name, email: x.email ?? "", isSuperAdmin: false });
 const today = () => localDate(new Date(), TZ);
 const week = () => ({ from: addDays(today(), -6), to: today() });
 

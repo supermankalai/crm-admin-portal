@@ -26,6 +26,8 @@ export const planUpdateSchema = z.object({
   featureReports: z.boolean(),
   featureCsvExport: z.boolean(),
   featureClassBookings: z.boolean(),
+  featureMobileApp: z.boolean(),
+  featureMemberApp: z.boolean(),
   isActive: z.boolean(),
 });
 export type PlanUpdateInput = z.infer<typeof planUpdateSchema>;

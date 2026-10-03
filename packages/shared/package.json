@@ -1,0 +1,15 @@
+{
+  "name": "@fitcrm/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure business rules, Zod schemas and the mobile API contract shared by the web app, its API and the mobile app. No server code, no React.",
+  "type": "module",
+  "exports": {
+    "./domain/*": "./src/domain/*.ts",
+    "./validation/*": "./src/validation/*.ts",
+    "./api/*": "./src/api/*.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  }
+}

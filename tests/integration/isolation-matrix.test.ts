@@ -41,7 +41,7 @@ const PLATFORM_TABLES = ["PlatformAuditLog", "GymSubscription", "SupportAccessSe
 
 beforeAll(async () => {
   const env = { ...process.env, MIGRATION_DATABASE_URL: process.env.TEST_MIGRATION_DATABASE_URL, DATABASE_URL: process.env.TEST_DATABASE_URL };
-  execSync("npx tsx prisma/seed.ts", { stdio: "pipe", env });
+  execSync("npx tsx --conditions=react-server prisma/seed.ts", { stdio: "pipe", env });
 
   const db = getOwnerDb();
   const rows = await db.$queryRawUnsafe<Gym[]>(
@@ -130,8 +130,8 @@ describe("the seed gives every table data in both gyms", () => {
       const [{ n }] = await getOwnerDb().$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(t)} WHERE "gymId" = $1`, B().id);
       if (n === 0) empty.push(t);
     }
-    // Pulse has no pending invitations or uploads in the seed; every other table has rows.
-    expect(empty.filter((t) => !["StaffInvitation", "FileAsset"].includes(t))).toEqual([]);
+    // Pulse has no pending staff or member-app invitations or uploads in the seed; every other table has rows.
+    expect(empty.filter((t) => !["StaffInvitation", "FileAsset", "MemberAppInvite"].includes(t))).toEqual([]);
   });
 });
 

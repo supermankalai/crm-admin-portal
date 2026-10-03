@@ -21,7 +21,9 @@
     "db:seed": "prisma db seed",
     "keys:generate": "tsx scripts/generate-keys.ts",
     "crypto:rotate": "tsx scripts/crypto-rotate.ts",
-    "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts"
+    "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts",
+    "openapi:generate": "tsx scripts/openapi.ts",
+    "dev:lan": "next dev -H 0.0.0.0"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -40,6 +42,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "jose": "^6.2.12",
     "lucide-react": "^1.49.0",
     "next": "^16.3.8",
     "next-auth": "^5.0.0-beta.32",
@@ -78,5 +81,8 @@
     "esbuild@0.28.2": true,
     "prisma@7.10.0": true,
     "unrs-resolver@1.12.2": true
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

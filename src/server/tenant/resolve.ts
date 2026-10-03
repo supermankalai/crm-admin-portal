@@ -32,6 +32,8 @@ const GYM_SELECT = {
           featureReports: true,
           featureCsvExport: true,
           featureClassBookings: true,
+          featureMobileApp: true,
+          featureMemberApp: true,
         },
       },
     },
@@ -61,6 +63,8 @@ type GymRow = {
       featureReports: boolean;
       featureCsvExport: boolean;
       featureClassBookings: boolean;
+      featureMobileApp: boolean;
+      featureMemberApp: boolean;
     };
   } | null;
 };
@@ -88,7 +92,13 @@ function buildContext(
           maxMembers: plan.maxMembers,
           maxStaff: plan.maxStaff,
           maxLocations: plan.maxLocations,
-          features: { reports: plan.featureReports, csvExport: plan.featureCsvExport, classBookings: plan.featureClassBookings },
+          features: {
+            reports: plan.featureReports,
+            csvExport: plan.featureCsvExport,
+            classBookings: plan.featureClassBookings,
+            mobileApp: plan.featureMobileApp,
+            memberApp: plan.featureMemberApp,
+          },
         }
       : null,
     access: computeSubscriptionAccess(gym.status, subscription ?? null, now),
@@ -103,14 +113,27 @@ function buildContext(
  */
 export async function resolveTenant(user: SessionUserLike, slug: string, now = new Date()): Promise<TenantContext | null> {
   if (!SLUG_PATTERN.test(slug)) return null;
+  return resolveStaff(user, { slug }, now);
+}
+
+/** Same as resolveTenant, for callers that hold a verified gym id (mobile access tokens). */
+export async function resolveTenantByGymId(user: SessionUserLike, gymId: string, now = new Date()): Promise<TenantContext | null> {
+  return resolveStaff(user, { id: gymId }, now);
+}
+
+async function resolveStaff(user: SessionUserLike, gym: { slug: string } | { id: string }, now: Date): Promise<TenantContext | null> {
   const staff = await withUser(user.id, (tx) =>
     tx.staffMember.findFirst({
-      where: { userId: user.id, status: "ACTIVE", gym: { slug } },
+      where: { userId: user.id, status: "ACTIVE", gym },
       select: { id: true, role: true, gym: { select: GYM_SELECT } },
     })
   );
   return staff ? buildContext(user, staff.gym, staff.role, staff.id, null, now) : null;
 }
+
+/** Gym fields + plan + subscription access, for building member contexts the same way. */
+export { GYM_SELECT, buildContext };
+export type { GymRow };
 
 /**
  * Super admin support access: valid only for the admin who opened the session, for that one

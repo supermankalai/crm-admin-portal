@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isDateString } from "@/domain/dates";
-import { normalisePhone } from "@/domain/phone";
+import { isDateString } from "../domain/dates";
+import { normalisePhone } from "../domain/phone";
 import { emailSchema, newPasswordSchema } from "./auth";
 
 const id = z.string().trim().min(1).max(64);

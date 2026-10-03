@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isDateString } from "@/domain/dates";
-import { normalisePhone } from "@/domain/phone";
+import { isDateString } from "../domain/dates";
+import { normalisePhone } from "../domain/phone";
 
 /** Optional free text: trims, and turns "" into null so "cleared" and "never set" are the same. */
 const optionalText = (max: number) =>

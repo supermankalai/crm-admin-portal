@@ -40,5 +40,5 @@ export async function resetTestDatabase({ seed = false } = {}) {
     await grants.end();
   }
 
-  if (seed) execSync("npx tsx prisma/seed.ts", { stdio: "pipe", env });
+  if (seed) execSync("npx tsx --conditions=react-server prisma/seed.ts", { stdio: "pipe", env });
 }

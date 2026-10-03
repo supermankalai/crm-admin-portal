@@ -32,6 +32,14 @@ export function withTenant<T>(
   return runInContext(appDb, ctx, fn, options);
 }
 
+/**
+ * A member acting in one gym through the member app. Staff policies don't apply (the user isn't
+ * staff); member-scoped policies resolve the member via app_current_member_id().
+ */
+export function withMember<T>(ctx: { userId: string; gymId: string; memberId: string }, fn: (tx: Tx) => Promise<T>, options?: TxOptions) {
+  return runInContext(appDb, ctx, fn, options);
+}
+
 /** A verified super admin in the platform area. Grants platform tables only — never tenant rows. */
 export function withPlatformAdmin<T>(userId: string, fn: (tx: Tx) => Promise<T>, options?: TxOptions) {
   return runInContext(appDb, { userId, platformAdmin: true }, fn, options);

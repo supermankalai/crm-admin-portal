@@ -58,6 +58,13 @@ const envSchema = z
     STORAGE_DIR: z.string().min(1).default("./storage"),
     EMAIL_PROVIDER: z.enum(["dev-outbox"]).default("dev-outbox"),
     EMAIL_FROM: z.string().min(3),
+    // Mobile API: one secret, from which separate keys are derived (access tokens, one-time codes,
+    // QR codes, signed file URLs). 32 random bytes, base64.
+    MOBILE_SECRET: base64Key32,
+    SMS_PROVIDER: z.enum(["dev-outbox", "twilio"]).default("dev-outbox"),
+    TWILIO_ACCOUNT_SID: z.string().regex(/^AC[0-9a-f]{32}$/i, "must look like AC… (34 characters)").optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(16).optional(),
+    TWILIO_FROM: z.string().min(3).optional(),
     LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
     // Per-IP ceilings (per 15 min for login, per hour for sign-up). Raise only behind a trusted
     // proxy that sets X-Forwarded-For, or for automated test runs.
@@ -74,6 +81,11 @@ const envSchema = z
         path: ["ENCRYPTION_ACTIVE_KEY_VERSION"],
         message: `no key with version ${env.ENCRYPTION_ACTIVE_KEY_VERSION} in ENCRYPTION_KEYS`,
       });
+    }
+    if (env.SMS_PROVIDER === "twilio") {
+      for (const key of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"] as const) {
+        if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "is required when SMS_PROVIDER=twilio" });
+      }
     }
     const appUser = new URL(env.DATABASE_URL).username;
     if (appUser === "postgres") {

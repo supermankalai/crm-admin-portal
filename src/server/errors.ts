@@ -51,3 +51,10 @@ export class FeatureNotInPlanError extends AppError {
     super(message, "feature_not_in_plan", 402);
   }
 }
+
+/** Missing, invalid or expired credentials (mobile API: 401). */
+export class UnauthenticatedError extends AppError {
+  constructor(message = "Please sign in again.", code = "unauthenticated") {
+    super(message, code, 401);
+  }
+}

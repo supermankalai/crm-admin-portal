@@ -14,9 +14,10 @@ async function main() {
   const { getEnv } = await import("@/server/env");
   const { createPrismaClient } = await import("@/server/db/create-client");
   const { hashPassword } = await import("@/server/auth/password");
-  const { GYMS, PASSWORDS, PLATFORM_PLANS, SHARED_USER, SUPER_ADMIN } = await import("./seed/config");
+  const { GYMS, MEMBER_APP, PASSWORDS, PLATFORM_PLANS, SHARED_USER, SUPER_ADMIN } = await import("./seed/config");
   const { at, id, int, past } = await import("./seed/lib");
   const { seedGym } = await import("./seed/gym");
+  const { seedMemberApp } = await import("./seed/member-app");
 
   const env = getEnv();
   if (!env.MIGRATION_DATABASE_URL) throw new Error("MIGRATION_DATABASE_URL is required to seed");
@@ -63,10 +64,14 @@ async function main() {
       });
     }
 
+    console.log("Member app accounts…");
+    await seedMemberApp(db, { memberPasswordHash: await hashPassword(PASSWORDS.member) });
+
     console.log(`\n✔ Seed complete in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     console.log(`  Super admin: ${SUPER_ADMIN.email} / ${PASSWORDS.superAdmin}`);
     console.log(`  All gym staff (see README for the full list): password ${PASSWORDS.staff}`);
     console.log(`  Multi-gym user: ${SHARED_USER.email} (Trainer @ iron-temple, Manager @ zen-strength)`);
+    console.log(`  Member app: member1…member${MEMBER_APP.accountsPerGym}@<gym domain>, ${MEMBER_APP.shared.email} (two gyms), ${MEMBER_APP.phoneOnly.phone} (phone only): password ${PASSWORDS.member}`);
   } finally {
     await db.$disconnect();
   }

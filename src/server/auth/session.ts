@@ -29,7 +29,9 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       select: { id: true, email: true, name: true, isSuperAdmin: true, sessionVersion: true },
     })
   );
-  if (!user || user.sessionVersion !== session.sv) return null;
+  // The web portal is for staff and platform admins, who always sign in by email. A phone-only
+  // (member app) login has no web session.
+  if (!user || user.sessionVersion !== session.sv || !user.email) return null;
   return { id: user.id, email: user.email, name: user.name, isSuperAdmin: user.isSuperAdmin };
 });
 

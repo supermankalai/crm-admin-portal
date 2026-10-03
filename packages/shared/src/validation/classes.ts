@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isDateString } from "@/domain/dates";
+import { isDateString } from "../domain/dates";
 
 const id = z.string().trim().min(1).max(64);
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");

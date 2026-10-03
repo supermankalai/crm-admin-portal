@@ -1,15 +1,15 @@
 import "server-only";
 import { recordPlatformAudit, recordPlatformAuditStandalone } from "@/server/audit/platform-audit";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
-import { withUser } from "@/server/db/context";
+import { withUser, type Tx } from "@/server/db/context";
 import { ValidationError } from "@/server/errors";
 import { enforce, RATE_LIMITS } from "@/server/security/rate-limit";
 import type { RequestMeta } from "@/server/security/request-meta";
 
 /**
- * The signed-in user's own account. Both operations bump User.sessionVersion, which every request
- * checks (getSessionUser), so every existing session — on every device, including this one —
- * stops working immediately.
+ * The signed-in user's own account (web and mobile). Both operations bump User.sessionVersion,
+ * which every web and mobile request checks, so every existing session — on every device,
+ * including this one — stops working immediately.
  */
 
 export async function changePassword(userId: string, input: { currentPassword: string; newPassword: string }, meta: RequestMeta) {
@@ -20,6 +20,7 @@ export async function changePassword(userId: string, input: { currentPassword: s
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
     if (!(await verifyPassword(user.passwordHash, input.currentPassword))) return false;
     await tx.user.update({ where: { id: userId }, data: { passwordHash: newHash, sessionVersion: { increment: 1 } }, select: { id: true } });
+    await revokeMobileSessions(tx, userId, "password_changed");
     await recordPlatformAudit(tx, { action: "auth.password_change", actorUserId: userId, meta });
     return true;
   });
@@ -33,6 +34,15 @@ export async function changePassword(userId: string, input: { currentPassword: s
 export async function signOutEverywhere(userId: string, meta: RequestMeta) {
   await withUser(userId, async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { sessionVersion: { increment: 1 } }, select: { id: true } });
+    await revokeMobileSessions(tx, userId, "signed_out_everywhere");
     await recordPlatformAudit(tx, { action: "auth.sessions_revoked", actorUserId: userId, meta });
   });
+}
+
+/**
+ * The sessionVersion bump already invalidates mobile access and refresh tokens; marking the device
+ * sessions revoked as well keeps the "your devices" list truthful.
+ */
+async function revokeMobileSessions(tx: Tx, userId: string, reason: string) {
+  await tx.mobileDeviceSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date(), revokeReason: reason } });
 }

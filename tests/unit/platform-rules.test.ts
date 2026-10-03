@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkLimit, featureMessage, limitMessage, usageLevel, type PlanLimits } from "@/domain/plan-limits";
 import { applySubscriptionChange, InvalidSubscriptionChange, type SubscriptionState } from "@/domain/subscription-changes";
 
-const starter: PlanLimits = { name: "Starter", maxMembers: 150, maxStaff: 8, maxLocations: 1, features: { reports: false, csvExport: false, classBookings: true } };
+const starter: PlanLimits = { name: "Starter", maxMembers: 150, maxStaff: 8, maxLocations: 1, features: { reports: false, csvExport: false, classBookings: true, mobileApp: false, memberApp: false } };
 
 describe("plan limits", () => {
   it("allows up to and including the limit", () => {

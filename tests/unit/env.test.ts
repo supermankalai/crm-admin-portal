@@ -13,6 +13,7 @@ const valid = () => ({
   ENCRYPTION_KEYS: `1:${key()},2:${key()}`,
   ENCRYPTION_ACTIVE_KEY_VERSION: "2",
   BLIND_INDEX_KEY: key(),
+  MOBILE_SECRET: key(),
   EMAIL_FROM: "FitCRM <no-reply@example.com>",
 });
 
@@ -65,5 +66,13 @@ describe("environment validation", () => {
     } catch (error) {
       expect((error as Error).message).not.toContain(secret);
     }
+  });
+});
+
+describe("mobile and SMS settings", () => {
+  it("requires a 32-byte mobile secret, and Twilio credentials only when Twilio is chosen", () => {
+    expect(issuesFor({ ...valid(), MOBILE_SECRET: undefined }).join()).toMatch(/MOBILE_SECRET/);
+    expect(issuesFor({ ...valid(), SMS_PROVIDER: "twilio" }).join()).toMatch(/TWILIO_ACCOUNT_SID.*TWILIO_AUTH_TOKEN.*TWILIO_FROM/);
+    expect(issuesFor({ ...valid(), SMS_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: `AC${"a".repeat(32)}`, TWILIO_AUTH_TOKEN: "t".repeat(32), TWILIO_FROM: "+15550001111" })).toEqual([]);
   });
 });

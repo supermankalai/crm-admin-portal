@@ -62,6 +62,20 @@ export function phoneBlindIndex(gymId: string, rawPhone: string | null | undefin
 }
 
 /**
+ * Blind index for a login phone number (User.phoneBlindIndex). Platform scope — not tied to a gym —
+ * because one login spans gyms. Never equal to a member's per-gym index for the same number.
+ */
+export function userPhoneBlindIndex(rawPhone: string | null | undefined): string | null {
+  const normalised = rawPhone ? normalisePhone(rawPhone) : null;
+  return normalised ? blindIndexWith(getBlindKey(), "platform", "user-phone", normalised) : null;
+}
+
+/** Encryption context for a login phone number (platform scope, bound to the user id). */
+export function userPhoneContext(userId: string): FieldContext {
+  return { gymId: "platform", model: "User", field: "phone", recordId: userId };
+}
+
+/**
  * For display paths: a single unreadable value (corrupted, or encrypted with a key that is no
  * longer loaded) must not take the whole page down. Logs the failure (never the value) and
  * returns null; callers show a placeholder.

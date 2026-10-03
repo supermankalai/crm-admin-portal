@@ -134,7 +134,10 @@ export function CheckInConsole({ gymSlug, locations, canSell, writable }: { gymS
               autoComplete="off"
             />
           </div>
-          <Button type="submit" className="h-12" disabled={pending || !query.trim()}>
+          {/* Not disabled while pending: a handheld scanner can send the next code (Enter) while the
+              previous check-in's refresh is still running, and a disabled submit button would
+              silently drop that scan. */}
+          <Button type="submit" className="h-12" disabled={!query.trim()}>
             {pending ? <Loader2 className="animate-spin" aria-hidden /> : "Find"}
           </Button>
         </form>

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isDateString } from "@/domain/dates";
-import { parseMajorToMinor } from "@/domain/money";
+import { isDateString } from "../domain/dates";
+import { parseMajorToMinor } from "../domain/money";
 
 const id = z.string().trim().min(1).max(64);
 

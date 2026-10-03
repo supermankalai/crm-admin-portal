@@ -25,5 +25,6 @@ if (versionFlag > -1) {
   console.log("ENCRYPTION_ACTIVE_KEY_VERSION=1");
   console.log(`BLIND_INDEX_KEY=${b64(32)}`);
   console.log("BLIND_INDEX_KEY_VERSION=1");
+  console.log(`MOBILE_SECRET=${b64(32)}`);
   console.log(`APP_DB_PASSWORD=${randomBytes(18).toString("base64url")}`);
 }

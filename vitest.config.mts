@@ -1,11 +1,15 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
 
-const alias = {
-  "@": path.resolve(import.meta.dirname, "src"),
+// Order matters: the shared-package aliases must win over the general "@" alias.
+const alias = [
+  { find: /^@fitcrm\/shared\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src") + "/" },
+  { find: /^@\/domain\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src/domain") + "/" },
+  { find: /^@\/lib\/validation\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src/validation") + "/" },
+  { find: /^@\//, replacement: path.resolve(import.meta.dirname, "src") + "/" },
   // "server-only" throws outside the React Server Components bundler; tests run in plain Node.
-  "server-only": path.resolve(import.meta.dirname, "tests/support/empty-module.ts"),
-};
+  { find: /^server-only$/, replacement: path.resolve(import.meta.dirname, "tests/support/empty-module.ts") },
+];
 
 export default defineConfig({
   test: {

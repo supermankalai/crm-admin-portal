@@ -15,7 +15,7 @@ import { disconnectAll, getOwnerDb, truncateAll } from "../support/test-db";
 const meta = { ip: "127.0.0.1", userAgent: "vitest" };
 const TZ = "Asia/Kolkata";
 const tomorrow = () => addDays(localDate(new Date(), TZ), 1);
-const u = (x: { id: string; name: string; email: string }) => ({ ...x, isSuperAdmin: false });
+const u = (x: { id: string; name: string; email: string | null }) => ({ id: x.id, name: x.name, email: x.email ?? "", isSuperAdmin: false });
 
 let w: World;
 let ownerA: TenantContext;

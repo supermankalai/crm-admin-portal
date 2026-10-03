@@ -118,7 +118,7 @@ describe("gym sign-up", () => {
     expect(await owner.platformAuditLog.count({ where: { gymId: gym.id, action: "gym.signup" } })).toBe(1);
 
     // The new owner can immediately work in their gym, and only there.
-    const ctx = await resolveTenant({ id: user.id, name: user.name, email: user.email, isSuperAdmin: false }, "new-gym");
+    const ctx = await resolveTenant({ id: user.id, name: user.name, email: user.email ?? "", isSuperAdmin: false }, "new-gym");
     expect(ctx).toMatchObject({ role: "OWNER", access: { writable: true, isTrial: true } });
   });
 

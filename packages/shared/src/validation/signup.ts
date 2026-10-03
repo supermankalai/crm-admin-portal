@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { slugProblem } from "@/domain/slug";
+import { slugProblem } from "../domain/slug";
 import { emailSchema, newPasswordSchema } from "./auth";
 
 import { CURRENCY_CODES, isTimeZone } from "./settings";

@@ -144,8 +144,12 @@ enum AuditActorType {
 // ─────────────────────────── Platform tables ───────────────────────────
 
 model User {
-  id             String    @id @default(cuid(2))
-  email          String    @unique // always lower-case (CHECK constraint)
+  id              String    @id @default(cuid(2))
+  /// Optional since mobile: member accounts may be phone-only. CHECK: email or phone present.
+  email           String?   @unique // always lower-case (CHECK constraint)
+  /// Encrypted (platform scope) + platform-wide blind index for phone login.
+  phoneEnc        String?
+  phoneBlindIndex String?   @unique
   name           String
   passwordHash   String
   isSuperAdmin   Boolean   @default(false)
@@ -154,7 +158,10 @@ model User {
   createdAt      DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
 
-  staff         StaffMember[]
+  staff          StaffMember[]
+  memberAccounts MemberAccount[]
+  deviceSessions MobileDeviceSession[]
+  loginOtps      LoginOtp[]
   resetTokens   PasswordResetToken[]
   notifications Notification[]
   supportAccess SupportAccessSession[]
@@ -187,6 +194,10 @@ model PlatformPlan {
   featureReports       Boolean
   featureCsvExport     Boolean
   featureClassBookings Boolean
+  /// Staff use of the mobile app.
+  featureMobileApp     Boolean  @default(false)
+  /// Member app accounts (card, booking, workouts…).
+  featureMemberApp     Boolean  @default(false)
   sortOrder            Int      @default(0)
   isActive             Boolean  @default(true)
   createdAt            DateTime @default(now()) @db.Timestamptz(3)
@@ -237,6 +248,8 @@ model Gym {
   notifications       Notification[]
   files               FileAsset[]
   auditLogs           AuditLog[]
+  memberAccounts      MemberAccount[]
+  memberAppInvites    MemberAppInvite[]
 }
 
 model GymSubscription {
@@ -354,6 +367,7 @@ model StaffMember {
   checkInsRecorded CheckIn[]
   classesTaught    ClassSession[]
   filesUploaded    FileAsset[]
+  appInvitesSent   MemberAppInvite[]
 
   @@unique([gymId, id])
   @@unique([gymId, userId])
@@ -521,6 +535,8 @@ model Member {
   checkIns    CheckIn[]
   bookings    Booking[]
   trainers    TrainerClient[]
+  appAccount  MemberAccount?
+  appInvites  MemberAppInvite[]
 
   @@unique([gymId, id])
   @@unique([gymId, memberNumber])
@@ -832,4 +848,120 @@ model AuditLog {
 
   @@index([gymId, createdAt])
   @@index([gymId, entityType, entityId])
+}
+
+// ─────────────────────────────── Mobile app ───────────────────────────────
+
+enum MemberAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MemberInviteChannel {
+  EMAIL
+  SMS
+  CODE
+}
+
+/// Links a global User login to a Member record in one gym (the member's app access there).
+model MemberAccount {
+  id          String              @id @default(cuid(2))
+  gymId       String
+  memberId    String
+  userId      String
+  status      MemberAccountStatus @default(ACTIVE)
+  lastLoginAt DateTime?           @db.Timestamptz(3)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([gymId, id])
+  @@unique([gymId, memberId])
+  @@unique([gymId, userId])
+  @@unique([memberId])
+  @@index([userId])
+}
+
+/// An invitation for a member to use the app: email/SMS link or a short front-desk code.
+/// Only the token's hash is stored; single use; expires.
+model MemberAppInvite {
+  id          String              @id @default(cuid(2))
+  gymId       String
+  memberId    String
+  channel     MemberInviteChannel
+  tokenHash   String              @unique
+  /// The identity the account will be bound to (exactly one is set).
+  email       String?
+  phoneEnc    String?
+  /// Platform-scope blind index of the phone (matches User.phoneBlindIndex).
+  phoneBlindIndex String?
+  expiresAt   DateTime            @db.Timestamptz(3)
+  usedAt      DateTime?           @db.Timestamptz(3)
+  revokedAt   DateTime?           @db.Timestamptz(3)
+  createdById String
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  member    Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  createdBy StaffMember @relation(fields: [gymId, createdById], references: [gymId, id])
+
+  @@index([gymId, memberId])
+}
+
+/// One-time login codes (email or SMS). Reachable only through SECURITY DEFINER functions.
+model LoginOtp {
+  id             String    @id @default(cuid(2))
+  userId         String
+  identifierHash String
+  codeHash       String
+  attempts       Int       @default(0)
+  expiresAt      DateTime  @db.Timestamptz(3)
+  usedAt         DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([identifierHash, createdAt])
+}
+
+/// A logged-in device. The user can list and revoke these; revoking ends its refresh chain.
+model MobileDeviceSession {
+  id             String    @id @default(cuid(2))
+  userId         String
+  deviceName     String
+  platform       String
+  appVersion     String?
+  ip             String?
+  /// User.sessionVersion when created; a password change or "sign out everywhere" ends the session.
+  sessionVersion Int
+  lastSeenAt     DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt      DateTime? @db.Timestamptz(3)
+  revokeReason   String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  user          User                 @relation(fields: [userId], references: [id])
+  refreshTokens MobileRefreshToken[]
+
+  @@index([userId, revokedAt])
+}
+
+/// Rotating refresh tokens (hash only). Re-using a used token revokes the whole device session.
+model MobileRefreshToken {
+  id        String    @id @default(cuid(2))
+  sessionId String
+  tokenHash String    @unique
+  usedAt    DateTime? @db.Timestamptz(3)
+  expiresAt DateTime  @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  session MobileDeviceSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
 }
