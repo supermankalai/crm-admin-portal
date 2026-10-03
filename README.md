@@ -2,15 +2,16 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: Phase 6 of 8 complete.** Done so far:
+> **Build status: Phase 7 of 8 complete.** Done so far:
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
 > - **Phase 4:** dashboard, members and membership plans
 > - **Phase 5:** payments and check-in
 > - **Phase 6:** classes, waitlists, staff invitations, trainer profiles and schedules
+> - **Phase 7:** reports with CSV export, notifications, settings and the gym audit log
 >
-> Reports, notifications, settings and the audit log page follow in Phase 7. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
+> Phase 8 is the security review, more tenant-isolation and end-to-end tests, and the final README. See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture.
 
 **Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
 
@@ -126,7 +127,7 @@ Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms 
 - Destructive actions need a reason and a confirmation.
 - Each change runs in one transaction: it locks the subscription row, updates the gym and subscription, appends `SubscriptionHistory`, and writes a platform audit entry.
 - The rules are pure functions in [src/domain/subscription-changes.ts](src/domain/subscription-changes.ts). Persistence sits behind a `BillingProvider` interface ([src/server/billing](src/server/billing)), so a Stripe provider can plug in later and reuse the same history, audit and read-only behaviour.
-- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, and clears stale rate-limit buckets. Read-only mode doesn't depend on it.
+- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, clears stale rate-limit buckets and generates in-app alerts for every gym (it runs with `--conditions=react-server` so the shared server modules load in a script). Read-only mode doesn't depend on it.
 
 **Plan limits and feature flags.**
 - `assertWithinLimit()` and `assertFeature()` run on the server before members, staff or locations are created, and before reports or exports. The UI shows upgrade messages such as *"Your Starter plan includes up to 150 members, and you've reached it. Upgrade your plan to add more."*
@@ -243,6 +244,51 @@ Trainers see their own clients and classes. Front desk doesn't see revenue.
 **My schedule (`/g/<slug>/schedule`)** shows the signed-in person's shifts and classes for the week.
 
 **Email in development.** Emails are not sent. The dev provider writes `.eml` files to `.dev-outbox/` (gitignored) and logs only the recipient, subject and file name. A real provider plugs in behind the `EmailProvider` interface ([src/server/email](src/server/email)).
+
+## 4f. Reports, notifications, settings and the audit log
+
+**Reports (`/g/<slug>/reports`)** are for owners and managers, on plans that include reports.
+- **Date range:** any range up to a year, or a preset (last 30 or 90 days, this month, last 12 months). Every figure is computed by PostgreSQL in the gym's time zone.
+- **Revenue:** money received minus refunds given, by day or month, by payment method and by membership plan.
+- **Attendance:**
+  - A weekday × hour heatmap of check-ins in local time, with hover details and a table view.
+  - The busiest time, the average per weekday, totals by location, and how many people were turned away at the door.
+- **Retention & churn:** for each month, the members active at the start, the number who were still active at the end, the number who lapsed (including cancellations) and the number who joined or returned.
+  - The current month is shown "to date". It's left out of the averages and the trend line.
+- **Class popularity:** per class type, the fill rate, full sessions, waitlist demand, the attendance rate (of bookings whose attendance was marked) and cancelled classes.
+- **CSV export** (`/api/g/<slug>/reports/<report>?from=&to=`) needs the plan's *CSV export* feature.
+  - The revenue export is a per-payment ledger.
+  - Files are UTF-8 with a BOM, so they open correctly in Excel.
+  - Text cells that start with `= + - @` are neutralised against spreadsheet formula injection.
+  - Every export is audited with the report, the range and the row count, never the contents.
+
+**Notifications (`/g/<slug>/notifications`, and the bell in the header).**
+- **Alerts and recipients:**
+  - Memberships ending within 7 days and not yet renewed: owner, managers and front desk.
+  - Overdue invoices: owner and managers.
+  - The gym's trial or subscription ending within 7 days: owner.
+  - A plan limit at 90% or more: owner.
+- **Generation:** `npm run jobs:run` creates alerts for every gym. Opening the notifications page also refreshes alerts, at most once every 10 minutes per gym.
+  - Each alert has a dedupe key, so nothing is ever sent twice.
+- **Privacy:** RLS lets each person read and update **only their own** notifications, and only the "read" marker can change.
+- **Using them:** clicking an alert marks it read and opens the member, invoice or billing page. *Mark all as read* clears the list.
+- **Channels:** delivery goes through a `NotificationChannel` interface ([src/server/notifications](src/server/notifications)). In-app is built; email or SMS can be added beside it.
+
+**Settings (`/g/<slug>/settings`, owner only; the database also lets only the owner update the gym row).**
+- **Gym profile:** name, contact details, address, time zone, currency and tax rate.
+  - The currency is locked once invoices or payments exist.
+  - A new tax rate applies to new invoices only.
+- **Locations & hours:** add or rename locations, up to the plan's limit, and set opening hours per day, including closed days.
+- **Branding:** the brand colour and a logo.
+  - The logo is a JPEG, PNG or WebP of up to 2 MB, checked by its bytes.
+  - It is stored per gym, served only to that gym's staff, and a database trigger ensures it is the gym's own file.
+- **Plan & billing** is linked from here.
+- Every change is audited with a before/after diff.
+
+**Audit log (`/g/<slug>/audit`, owner only).**
+- Filter by category, by staff member (including removed staff) and by date.
+- Support-access entries are labelled.
+- Entries are append-only, and personal values were redacted when each entry was written.
 
 ## 5. Encryption
 

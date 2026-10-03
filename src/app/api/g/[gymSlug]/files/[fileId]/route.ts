@@ -10,7 +10,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gym
   const { gymSlug, fileId } = await params;
   const ctx = await getGymAccess(gymSlug);
   if (!ctx || !/^[\w-]{10,64}$/.test(fileId)) return new NextResponse("Not found", { status: 404 });
-  if (!ctx.permissions.has("members.view")) return new NextResponse("Not found", { status: 404 });
 
   const file = await readGymFile(ctx, fileId);
   if (!file) return new NextResponse("Not found", { status: 404 });

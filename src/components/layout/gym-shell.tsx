@@ -58,7 +58,9 @@ const ICONS: Record<NavIcon, typeof LayoutDashboard> = {
 };
 
 export type ShellProps = {
-  gym: { slug: string; name: string; brandColor: string };
+  gym: { slug: string; name: string; brandColor: string; logoUrl?: string | null };
+  /** Bell in the header; omitted when the user can't see notifications. */
+  notifications?: { href: string; unread: number };
   roleLabel: string;
   user: { name: string; email: string; isSuperAdmin: boolean };
   nav: { label: string; href: string; icon: NavIcon }[];
@@ -68,7 +70,11 @@ export type ShellProps = {
   children: ReactNode;
 };
 
-function GymMark({ color, className }: { color: string; className?: string }) {
+function GymMark({ color, logoUrl, className }: { color: string; logoUrl?: string | null; className?: string }) {
+  if (logoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- served by our authenticated file route
+    return <img src={logoUrl} alt="" className={cn("size-8 shrink-0 rounded-lg border bg-card object-contain", className)} />;
+  }
   return (
     <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg text-white", className)} style={{ backgroundColor: color }} aria-hidden>
       <Building2 className="size-4" />
@@ -84,7 +90,7 @@ function GymSwitcher({ gym, gyms }: Pick<ShellProps, "gym" | "gyms">) {
           className="flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
           aria-label={`Current gym: ${gym.name}. Switch gym`}
         >
-          <GymMark color={gym.brandColor} />
+          <GymMark color={gym.brandColor} logoUrl={gym.logoUrl} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{gym.name}</span>
             <span className="block truncate text-xs text-muted-foreground">/g/{gym.slug}</span>
@@ -144,7 +150,7 @@ function SidebarNav({ nav, onNavigate }: { nav: ShellProps["nav"]; onNavigate?: 
   );
 }
 
-export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction, children }: ShellProps) {
+export function GymShell({ gym, notifications, roleLabel, user, nav, gyms, banner, logoutAction, children }: ShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const sidebar = (onNavigate?: () => void) => (
@@ -187,6 +193,18 @@ export function GymShell({ gym, roleLabel, user, nav, gyms, banner, logoutAction
           </Button>
           <span className="truncate font-semibold lg:hidden">{gym.name}</span>
           <div className="flex-1" />
+          {notifications && (
+            <Button asChild variant="ghost" size="icon" className="relative">
+              <Link href={notifications.href} aria-label={notifications.unread ? `Notifications, ${notifications.unread} unread` : "Notifications"}>
+                <Bell aria-hidden />
+                {notifications.unread > 0 && (
+                  <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white tabular-nums" aria-hidden>
+                    {notifications.unread > 99 ? "99+" : notifications.unread}
+                  </span>
+                )}
+              </Link>
+            </Button>
+          )}
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

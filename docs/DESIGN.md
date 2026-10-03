@@ -951,3 +951,15 @@ Business logic lives in `src/domain` (pure) and `src/server/services` (I/O). Com
   - `invitation_lookup` returns only the gym name and slug, the email, the role, the state and whether an account exists. EXECUTE on both is revoked from PUBLIC.
 - **Email** goes through the `EmailProvider` interface. Dev writes `.eml` files to `.dev-outbox/`. The invitation link is returned once to the inviter and never logged.
 
+
+## 14. Notes from Phase 7
+
+- **Notifications are personal at the database level.** Migration `personal_notifications` replaces the generic tenant read, update and delete policies on `Notification` with recipient-only ones (`recipientUserId = app_current_user_id()`).
+  - Inserting alerts for colleagues stays allowed for active staff, via `ON CONFLICT DO NOTHING` without RETURNING.
+  - A trigger makes everything except `readAt` immutable.
+- **Alert generation** (`generateGymNotifications`) uses the Prisma API with explicit `gymId` filters. The same code therefore runs in the app's RLS context, under an advisory lock and throttled, and in `npm run jobs:run` as the owner role. Dedupe keys are unique per gym.
+- **Reports** run as SQL aggregates in the tenant transaction, with every local date converted using the gym's time zone. Ranges are capped at 366 days.
+  - Retention counts a membership on a day if it covers that day and wasn't cancelled before it. A month still in progress is excluded from the averages.
+- **CSV:** RFC 4180 with CRLF and a BOM. Formula-like text cells are prefixed with `'`.
+- **Gym logo:** the trigger `Gym_logo_owned` requires `logoFileId` to be a `GYM_LOGO` FileAsset of the same gym. The file route serves logos to all staff; member photos keep member-visibility rules.
+- **Time zones:** ICU lists canonical names (e.g. `Asia/Calcutta`), so validation accepts any zone the runtime can use (including aliases such as `Asia/Kolkata`). The picker always includes the gym's current zone.

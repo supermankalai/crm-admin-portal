@@ -25,6 +25,7 @@ export type TenantContext = {
     currency: string;
     taxRateBps: number;
     brandColor: string;
+    logoFileId: string | null;
   };
   /** Null for super admin support access (not a staff member). */
   staffId: string | null;

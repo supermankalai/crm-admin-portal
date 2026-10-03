@@ -21,7 +21,7 @@
     "db:seed": "prisma db seed",
     "keys:generate": "tsx scripts/generate-keys.ts",
     "crypto:rotate": "tsx scripts/crypto-rotate.ts",
-    "jobs:run": "tsx scripts/jobs-run.ts"
+    "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

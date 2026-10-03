@@ -181,6 +181,8 @@ export async function readGymFile(ctx: TenantContext, fileId: string) {
   const asset = await inTenant(ctx, async (tx) => {
     const found = await tx.fileAsset.findUnique({ where: { id: fileId }, select: { storageKey: true, mimeType: true, kind: true } });
     // Member photos follow member visibility (trainers: own clients only).
+    // The gym logo is visible to all staff; member photos need member access.
+    if (found?.kind === "MEMBER_PHOTO" && !ctx.permissions.has("members.view")) return null;
     if (found?.kind === "MEMBER_PHOTO" && !ctx.permissions.has("members.viewAll")) {
       const visible = await tx.member.count({ where: { photoFileId: fileId, ...visibilityWhere(ctx) } });
       if (!visible) return null;

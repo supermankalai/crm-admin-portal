@@ -16,6 +16,7 @@ const GYM_SELECT = {
   currency: true,
   taxRateBps: true,
   brandColor: true,
+  logoFileId: true,
   subscription: {
     select: {
       status: true,
@@ -46,6 +47,7 @@ type GymRow = {
   currency: string;
   taxRateBps: number;
   brandColor: string;
+  logoFileId: string | null;
   subscription: {
     status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "EXPIRED" | "CANCELLED";
     trialEndsAt: Date | null;

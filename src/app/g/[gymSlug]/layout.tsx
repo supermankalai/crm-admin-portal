@@ -5,6 +5,7 @@ import { SubscriptionBanner } from "@/components/layout/subscription-banner";
 import { SupportBanner } from "@/components/layout/support-banner";
 import { ROLE_LABELS } from "@/domain/permissions";
 import { listMyGyms } from "@/server/services/my-gyms";
+import { unreadNotificationCount } from "@/server/services/notifications";
 import { requireGymAccess } from "@/server/tenant";
 import { logoutAction } from "../../(auth)/actions";
 
@@ -19,10 +20,13 @@ export default async function GymLayout({ children, params }: Props) {
   const { gymSlug } = await params;
   const ctx = await requireGymAccess(gymSlug);
   const gyms = await listMyGyms(ctx.user.id);
+  const canSeeNotifications = ctx.permissions.has("notifications.view") && !ctx.supportSessionId;
+  const unread = canSeeNotifications ? await unreadNotificationCount(ctx) : 0;
 
   return (
     <GymShell
-      gym={{ slug: ctx.gym.slug, name: ctx.gym.name, brandColor: ctx.gym.brandColor }}
+      gym={{ slug: ctx.gym.slug, name: ctx.gym.name, brandColor: ctx.gym.brandColor, logoUrl: ctx.gym.logoFileId ? `/api/g/${ctx.gym.slug}/files/${ctx.gym.logoFileId}` : null }}
+      notifications={canSeeNotifications ? { href: `/g/${ctx.gym.slug}/notifications`, unread } : undefined}
       roleLabel={ctx.supportSessionId ? "Support (read-only)" : ROLE_LABELS[ctx.role]}
       user={{ name: ctx.user.name, email: ctx.user.email, isSuperAdmin: ctx.user.isSuperAdmin }}
       nav={GYM_NAV.filter((item) => ctx.permissions.has(item.permission)).map((item) => ({
