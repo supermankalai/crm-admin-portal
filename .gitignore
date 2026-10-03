@@ -10,6 +10,9 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+# Mobile app defaults are public (API URL only, no secrets); local overrides (.env*.local) stay ignored.
+!mobile/.env.development
+!mobile/.env.production
 /src/generated/
 /storage/
 /.dev-outbox/

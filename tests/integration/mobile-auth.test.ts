@@ -86,7 +86,7 @@ describe("password login", () => {
     expect(status).toBe(200);
     expect(body.accessToken.split(".")).toHaveLength(3);
     expect(body.refreshToken.length).toBeGreaterThan(40);
-    expect(body.gyms).toEqual([{ slug: "gym-a", name: "Gym A", brandColor: expect.any(String), role: "OWNER", appAccess: { allowed: true, reason: null } }]);
+    expect(body.gyms).toEqual([{ slug: "gym-a", name: "Gym A", brandColor: expect.any(String), logoUrl: null, role: "OWNER", appAccess: { allowed: true, reason: null } }]);
     // Only the hash of the refresh token is stored — and the app role can't even read that table.
     const stored = await getOwnerDb().mobileRefreshToken.findFirstOrThrow({ where: { session: { id: body.sessionId } } });
     expect(stored.tokenHash).not.toBe(body.refreshToken);

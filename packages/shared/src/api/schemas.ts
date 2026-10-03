@@ -77,10 +77,14 @@ export const changePasswordRequestSchema = changePasswordSchema;
 export const gymRoleSchema = z.enum(["OWNER", "MANAGER", "FRONT_DESK", "TRAINER", "MEMBER"]);
 export type GymRole = z.infer<typeof gymRoleSchema>;
 
+/** Logo as a short-lived signed path ("/api/mobile/v1/files/…"); prefix it with the API host. */
+const logoUrlSchema = z.string().nullable();
+
 export const gymSummarySchema = z.object({
   slug: z.string(),
   name: z.string(),
   brandColor: z.string(),
+  logoUrl: logoUrlSchema,
   role: gymRoleSchema,
   /** Whether the gym's plan allows this kind of user in the app. */
   appAccess: z.object({ allowed: z.boolean(), reason: z.enum(["feature_not_in_plan"]).nullable() }),
@@ -110,6 +114,7 @@ export const currentGymSchema = z.object({
   slug: z.string(),
   name: z.string(),
   brandColor: z.string(),
+  logoUrl: logoUrlSchema,
   timezone: z.string(),
   currency: z.string(),
   role: gymRoleSchema,
@@ -124,7 +129,14 @@ export const selectGymResponseSchema = z.object({
   gym: currentGymSchema,
 });
 
-export const refreshResponseSchema = tokenPairSchema.extend({ gym: currentGymSchema.nullable() });
+export const refreshResponseSchema = tokenPairSchema.extend({
+  gym: currentGymSchema.nullable(),
+  /**
+   * Set when gymSlug was given but that gym can't be used any more (removed, plan changed).
+   * The refresh itself still succeeded — keep the new refresh token and show the gym picker.
+   */
+  gymError: z.object({ code: z.string(), message: z.string() }).nullable(),
+});
 
 export const otpRequestResponseSchema = z.object({ sent: z.literal(true) });
 

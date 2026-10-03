@@ -8,7 +8,7 @@ import { hashPassword, verifyAgainstDummy, verifyPassword } from "@/server/auth/
 import { decryptField, encryptField, userPhoneContext } from "@/server/crypto";
 import { withAnonymous, withUser } from "@/server/db/context";
 import { getEmailProvider } from "@/server/email";
-import { FeatureNotInPlanError, NotFoundError, UnauthenticatedError, ValidationError } from "@/server/errors";
+import { AppError, FeatureNotInPlanError, NotFoundError, UnauthenticatedError, ValidationError } from "@/server/errors";
 import { logger } from "@/server/logger";
 import { enforce, hashIdentifier, RATE_LIMITS, RateLimitError, reset } from "@/server/security/rate-limit";
 import type { RequestMeta } from "@/server/security/request-meta";
@@ -16,6 +16,7 @@ import { getSmsProvider, maskPhone } from "@/server/sms";
 import { resolveMemberContext, type MemberContext } from "@/server/tenant/member";
 import { resolveTenant } from "@/server/tenant/resolve";
 import type { TenantContext } from "@/server/tenant/types";
+import { signedFilePath } from "./files";
 import { inviteTokenHash, newOpaqueToken, newOtpCode, otpCodeHash, otpIdentifierHash, sha256Hex } from "./crypto";
 import { maskEmail, parseIdentifier, type Identifier } from "./identifier";
 import { signAccessToken } from "./tokens";
@@ -53,24 +54,26 @@ export async function gymsFor(userId: string): Promise<GymSummary[]> {
   const { staff, members } = await withUser(userId, async (tx) => ({
     staff: await tx.staffMember.findMany({
       where: { userId, status: "ACTIVE" },
-      select: { role: true, gym: { select: { slug: true, name: true, brandColor: true, status: true, ...planSelect } } },
+      select: { role: true, gym: { select: { id: true, slug: true, name: true, brandColor: true, logoFileId: true, status: true, ...planSelect } } },
       orderBy: { gym: { name: "asc" } },
     }),
     members: await tx.memberAccount.findMany({
       where: { userId, status: "ACTIVE" },
-      select: { gym: { select: { slug: true, name: true, brandColor: true, status: true, ...planSelect } } },
+      select: { gym: { select: { id: true, slug: true, name: true, brandColor: true, logoFileId: true, status: true, ...planSelect } } },
       orderBy: { gym: { name: "asc" } },
     }),
   }));
+  // Membership was just verified by these queries, so the logos can be signed for this user.
+  const logoOf = (gym: { id: string; logoFileId: string | null }) => (gym.logoFileId ? signedFilePath(gym.logoFileId, userId, gym.id) : null);
   const out = new Map<string, GymSummary>();
   for (const s of staff) {
     const allowed = s.gym.subscription?.plan.featureMobileApp ?? false;
-    out.set(s.gym.slug, { slug: s.gym.slug, name: s.gym.name, brandColor: s.gym.brandColor, role: s.role, appAccess: { allowed, reason: allowed ? null : "feature_not_in_plan" } });
+    out.set(s.gym.slug, { slug: s.gym.slug, name: s.gym.name, brandColor: s.gym.brandColor, logoUrl: logoOf(s.gym), role: s.role, appAccess: { allowed, reason: allowed ? null : "feature_not_in_plan" } });
   }
   for (const m of members) {
     if (out.has(m.gym.slug)) continue; // staff access takes precedence in the same gym
     const allowed = m.gym.subscription?.plan.featureMemberApp ?? false;
-    out.set(m.gym.slug, { slug: m.gym.slug, name: m.gym.name, brandColor: m.gym.brandColor, role: "MEMBER", appAccess: { allowed, reason: allowed ? null : "feature_not_in_plan" } });
+    out.set(m.gym.slug, { slug: m.gym.slug, name: m.gym.name, brandColor: m.gym.brandColor, logoUrl: logoOf(m.gym), role: "MEMBER", appAccess: { allowed, reason: allowed ? null : "feature_not_in_plan" } });
   }
   return [...out.values()];
 }
@@ -314,6 +317,7 @@ export function currentGymOf(ctx: TenantContext | MemberContext): CurrentGym {
     slug: ctx.gym.slug,
     name: ctx.gym.name,
     brandColor: ctx.gym.brandColor,
+    logoUrl: ctx.gym.logoFileId ? signedFilePath(ctx.gym.logoFileId, ctx.user.id, ctx.gym.id) : null,
     timezone: ctx.gym.timezone,
     currency: ctx.gym.currency,
     role: isMember ? "MEMBER" : (ctx as TenantContext).role,
@@ -369,15 +373,22 @@ export async function refreshSession(input: { refreshToken: string; gymSlug?: st
   let accessToken: string;
   let accessTokenExpiresAt: string;
   let gym: CurrentGym | null = null;
+  let gymError: { code: string; message: string } | null = null;
   if (input.gymSlug) {
-    const scoped = await scopeToGym(toMobileUser(dbUser), sessionId, dbUser.sessionVersion, input.gymSlug);
-    ({ accessToken, accessTokenExpiresAt, gym } = scoped);
-  } else {
-    const access = await signAccessToken({ sub: userId, sid: sessionId, sv: dbUser.sessionVersion });
-    accessToken = access.token;
-    accessTokenExpiresAt = access.expiresAt.toISOString();
+    // The refresh token has already rotated: never fail the whole call because of the gym, or
+    // the client would lose the new token and its next refresh would look like reuse.
+    try {
+      ({ accessToken, accessTokenExpiresAt, gym } = await scopeToGym(toMobileUser(dbUser), sessionId, dbUser.sessionVersion, input.gymSlug));
+      return { accessToken, accessTokenExpiresAt, refreshToken: newToken, refreshTokenExpiresAt: newExpires.toISOString(), sessionId, gym, gymError };
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      gymError = { code: error.code, message: error.message };
+    }
   }
-  return { accessToken, accessTokenExpiresAt, refreshToken: newToken, refreshTokenExpiresAt: newExpires.toISOString(), sessionId, gym };
+  const access = await signAccessToken({ sub: userId, sid: sessionId, sv: dbUser.sessionVersion });
+  accessToken = access.token;
+  accessTokenExpiresAt = access.expiresAt.toISOString();
+  return { accessToken, accessTokenExpiresAt, refreshToken: newToken, refreshTokenExpiresAt: newExpires.toISOString(), sessionId, gym, gymError };
 }
 
 // ─────────────────────────────── Devices ───────────────────────────────

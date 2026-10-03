@@ -49,7 +49,8 @@ function buildQuery(query?: Record<string, unknown>) {
 }
 
 export function createApiClient(options: ClientOptions) {
-  const doFetch = options.fetch ?? fetch;
+  // Looked up per request, so a fetch installed or replaced later (polyfills, tests) is used.
+  const doFetch: typeof fetch = (input, init) => (options.fetch ?? globalThis.fetch)(input, init);
 
   async function send<N extends EndpointName>(name: N, input: RequestOf<N>, retried: boolean): Promise<ResponseOf<N>> {
     const def = api[name];

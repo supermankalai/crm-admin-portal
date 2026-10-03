@@ -136,6 +136,12 @@
                           "brandColor": {
                             "type": "string"
                           },
+                          "logoUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "role": {
                             "type": "string",
                             "enum": [
@@ -177,6 +183,7 @@
                           "slug",
                           "name",
                           "brandColor",
+                          "logoUrl",
                           "role",
                           "appAccess"
                         ],
@@ -916,6 +923,12 @@
                           "brandColor": {
                             "type": "string"
                           },
+                          "logoUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "role": {
                             "type": "string",
                             "enum": [
@@ -957,6 +970,7 @@
                           "slug",
                           "name",
                           "brandColor",
+                          "logoUrl",
                           "role",
                           "appAccess"
                         ],
@@ -1736,6 +1750,12 @@
                           "brandColor": {
                             "type": "string"
                           },
+                          "logoUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "role": {
                             "type": "string",
                             "enum": [
@@ -1777,6 +1797,7 @@
                           "slug",
                           "name",
                           "brandColor",
+                          "logoUrl",
                           "role",
                           "appAccess"
                         ],
@@ -2147,6 +2168,12 @@
                             "brandColor": {
                               "type": "string"
                             },
+                            "logoUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
                             "timezone": {
                               "type": "string"
                             },
@@ -2210,11 +2237,35 @@
                             "slug",
                             "name",
                             "brandColor",
+                            "logoUrl",
                             "timezone",
                             "currency",
                             "role",
                             "permissions",
                             "access"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gymError": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
                           ],
                           "additionalProperties": false
                         },
@@ -2230,7 +2281,8 @@
                     "refreshToken",
                     "refreshTokenExpiresAt",
                     "sessionId",
-                    "gym"
+                    "gym",
+                    "gymError"
                   ],
                   "additionalProperties": false
                 }
@@ -2573,6 +2625,12 @@
                         "brandColor": {
                           "type": "string"
                         },
+                        "logoUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "timezone": {
                           "type": "string"
                         },
@@ -2636,6 +2694,7 @@
                         "slug",
                         "name",
                         "brandColor",
+                        "logoUrl",
                         "timezone",
                         "currency",
                         "role",
@@ -3482,6 +3541,12 @@
                           "brandColor": {
                             "type": "string"
                           },
+                          "logoUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "role": {
                             "type": "string",
                             "enum": [
@@ -3523,6 +3588,7 @@
                           "slug",
                           "name",
                           "brandColor",
+                          "logoUrl",
                           "role",
                           "appAccess"
                         ],
@@ -5211,6 +5277,12 @@
                     "brandColor": {
                       "type": "string"
                     },
+                    "logoUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "timezone": {
                       "type": "string"
                     },
@@ -5274,6 +5346,7 @@
                     "slug",
                     "name",
                     "brandColor",
+                    "logoUrl",
                     "timezone",
                     "currency",
                     "role",

@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 1 of 7 (API foundation) done.**
+> **Build status: all 8 web phases complete. Mobile app: Phase 2 of 7 done (API foundation, then the Expo app: sign-in, biometric lock, gym switching, branding, role tabs). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -416,6 +416,10 @@ curl -s localhost:3000/api/mobile/v1/auth/select-gym -H "Authorization: Bearer <
   -H 'Content-Type: application/json' -d '{"gymSlug":"iron-temple"}'
 curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessToken>"
 ```
+
+**The mobile app** lives in [mobile/](mobile/). It's a standalone Expo app, because Expo pins a different React version than Next.js, and it imports the shared contract from `packages/shared`. To run it on your phone, see [mobile/README.md](mobile/README.md).
+
+**Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
 
 **From a phone on the same Wi-Fi:**
 1. Run `npm run dev:lan`, which binds to every network interface.
