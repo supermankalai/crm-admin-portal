@@ -8,6 +8,7 @@ import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import type { SessionInput } from "@/lib/validation/classes";
+import { lockClassSession } from "./lock";
 
 /** Trainers (no classes.manage and no classes.book) only see and manage their own classes. */
 export function ownSessionsOnly(ctx: TenantContext): boolean {
@@ -150,9 +151,7 @@ export async function getSession(ctx: TenantContext, sessionId: string) {
 export async function updateSession(ctx: TenantContext, input: { sessionId: string; trainerId: string; roomId: string; capacity: number }, meta: RequestMeta) {
   assertCan(ctx, "classes.view");
   return inTenant(ctx, async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${input.sessionId} FOR UPDATE`;
-    const session = await tx.classSession.findUnique({ where: { id: input.sessionId } });
-    if (!session) throw new NotFoundError("Class not found.");
+    const session = await lockClassSession(tx, input.sessionId);
     assertCanManageSession(ctx, session);
     const changesStaffing = input.trainerId !== session.trainerId || input.roomId !== session.roomId;
     if (changesStaffing && !ctx.permissions.has("classes.manage")) throw new ForbiddenError("Only managers can change the trainer or room.");
@@ -171,8 +170,8 @@ export async function updateSession(ctx: TenantContext, input: { sessionId: stri
     if (changesStaffing) await assertNoConflicts(tx, [session], input.trainerId, input.roomId, session.id);
 
     await tx.classSession.update({ where: { id: session.id }, data: { trainerId: input.trainerId, roomId: input.roomId, capacity: input.capacity }, select: { id: true } });
-    const { promoteFromWaitlist } = await import("./bookings");
-    const promoted = await promoteFromWaitlist(tx, ctx, session.id, input.capacity - booked, meta);
+    const { promoteFromWaitlist, staffActor } = await import("./bookings");
+    const promoted = await promoteFromWaitlist(tx, staffActor(ctx), session.id, input.capacity - booked, meta);
     await recordAudit(tx, ctx, {
       action: "class.update",
       entityType: "ClassSession",
@@ -187,9 +186,7 @@ export async function updateSession(ctx: TenantContext, input: { sessionId: stri
 export async function cancelSession(ctx: TenantContext, sessionId: string, reason: string, meta: RequestMeta) {
   assertCan(ctx, "classes.view");
   return inTenant(ctx, async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${sessionId} FOR UPDATE`;
-    const session = await tx.classSession.findUnique({ where: { id: sessionId } });
-    if (!session) throw new NotFoundError("Class not found.");
+    const session = await lockClassSession(tx, sessionId);
     assertCanManageSession(ctx, session);
     if (session.status !== "SCHEDULED") throw new ValidationError("This class is not scheduled.");
     if (session.endsAt <= new Date()) throw new ValidationError("A finished class can't be cancelled.");

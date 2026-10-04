@@ -17,6 +17,9 @@ const GYM_SELECT = {
   taxRateBps: true,
   brandColor: true,
   logoFileId: true,
+  memberBookingDaysAhead: true,
+  memberCancelHours: true,
+  acceptStaticCheckInCodes: true,
   subscription: {
     select: {
       status: true,
@@ -50,6 +53,9 @@ type GymRow = {
   taxRateBps: number;
   brandColor: string;
   logoFileId: string | null;
+  memberBookingDaysAhead: number;
+  memberCancelHours: number;
+  acceptStaticCheckInCodes: boolean;
   subscription: {
     status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "EXPIRED" | "CANCELLED";
     trialEndsAt: Date | null;

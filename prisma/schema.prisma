@@ -139,6 +139,8 @@ enum AuditActorType {
   USER
   SUPPORT
   SYSTEM
+  /// A member acting through the member app (booking, cancelling, profile).
+  MEMBER
 }
 
 // ─────────────────────────── Platform tables ───────────────────────────
@@ -219,6 +221,11 @@ model Gym {
   email      String?
   phone      String?
   address    String?
+  /// Member app rules: how far ahead members may book, and the latest cancellation (hours before).
+  memberBookingDaysAhead   Int     @default(14)
+  memberCancelHours        Int     @default(2)
+  /// Accept printed/static check-in codes as well as the member app's rotating QR code.
+  acceptStaticCheckInCodes Boolean @default(true)
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
 

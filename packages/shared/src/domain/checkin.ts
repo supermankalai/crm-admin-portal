@@ -38,11 +38,18 @@ export function evaluateCheckIn(memberships: MembershipRecord[], today: DateStri
 }
 
 /** What the scanner / search box contains: a QR check-in code, a member number, or a name. */
-export type CheckInQuery = { kind: "code"; code: string } | { kind: "memberNumber"; value: number } | { kind: "name"; text: string } | { kind: "none" };
+export type CheckInQuery =
+  | { kind: "code"; code: string }
+  | { kind: "signed"; token: string }
+  | { kind: "memberNumber"; value: number }
+  | { kind: "name"; text: string }
+  | { kind: "none" };
 
 export function parseCheckInQuery(raw: string): CheckInQuery {
   const q = raw.trim();
   if (!q) return { kind: "none" };
+  // The member app's rotating QR code (verified and spent by the server).
+  if (/^FCM2\.[\w.-]{20,160}$/.test(q)) return { kind: "signed", token: q };
   const numbered = /^(?:m-?|#)?0*(\d{1,7})$/i.exec(q);
   if (numbered) return { kind: "memberNumber", value: Number(numbered[1]) };
   // QR codes encode "FITCRM:<code>"; a handheld scanner may type just the 10-character code.

@@ -366,3 +366,17 @@ Once these are answered, Phase 1 will deliver:
 - the API tests;
 
 all followed by the usual gate (migrate, seed, typecheck, lint, tests, web build).
+
+---
+
+## 12. Notes from mobile Phase 3
+
+- **Member booking context.** Members book through the same booking service as staff, with a `BookingActor` that sets the database context and how actions are audited.
+  - `withMemberAction` sets `app.member_action=on` next to a verified `app.current_member_id`.
+  - The `member_action_*` policies allow, *only during that action*, reads and writes on Booking, reads and updates on Membership (credits only), reads on MembershipFreeze, and inserting `MEMBER` audit rows.
+  - `membership_non_staff_update_guard` refuses any non-staff membership change other than ±1 class credit.
+- **Locking.** `SELECT … FOR UPDATE` on ClassSession needs UPDATE rights, which members don't have. Every class change therefore takes `pg_advisory_xact_lock(hashtext('class-session:'||id))` instead, so staff and member bookings serialise on one lock. The 20-way and 8-way concurrency tests cover it.
+- **Reads.** Members have `member_own_read` on their own memberships, freezes, bookings, invoices, payments, refunds and check-ins, and `member_catalog_read` on plans, class types, sessions, rooms, locations and hours. Spot counts and trainer names come from `member_class_schedule()`, a SECURITY DEFINER function, so no other member's booking is ever readable.
+- **QR.** The token is `FCM2.<memberId>.<exp>.<nonce>.<sig>`: an HMAC with a purpose-derived key and the gym id as part of the MAC input, a 45 s lifetime with 5 s of clock skew, and a nonce spent through `rate_limit_hit` (limit 1).
+- **Gym rules.** `Gym.memberBookingDaysAhead` (14), `memberCancelHours` (2) and `acceptStaticCheckInCodes` (true) are editable in web Settings → Member app and audited.
+- **App.** The card query is `sensitive` (memory only), refetches every 30 s, blocks screen capture and raises brightness. Payment, invoice and attendance history is also memory-only. The timetable and membership are cached for offline viewing.

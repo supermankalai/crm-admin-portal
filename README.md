@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 2 of 7 done (API foundation, then the Expo app: sign-in, biometric lock, gym switching, branding, role tabs). See [mobile/README.md](mobile/README.md).**
+> **Build status: all 8 web phases complete. Mobile app: Phase 3 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -418,6 +418,17 @@ curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessTo
 ```
 
 **The mobile app** lives in [mobile/](mobile/). It's a standalone Expo app, because Expo pins a different React version than Next.js, and it imports the shared contract from `packages/shared`. To run it on your phone, see [mobile/README.md](mobile/README.md).
+
+**Member endpoints** (`/member/*`) run as the member:
+- **Reads** go through member-scoped RLS, so the database returns only that member's own rows plus the gym's catalog.
+- **Booking and cancelling** reuse the staff booking service in a *member-action* context. During that one action, the transaction may touch the class's bookings and members' class credits, because waitlist promotion moves others up. A database trigger lets non-staff change only a class credit, one at a time.
+- **No overbooking:** both staff and members queue on the same per-class lock.
+- **Member card QR** is `FCM2.<memberId>.<exp>.<nonce>.<sig>`:
+  - it is valid for 45 s, and the app refreshes it every 30 s;
+  - the gym is bound into the HMAC;
+  - it is single-use: the first scan spends the nonce, so screenshots don't work.
+
+  The web check-in page and (from Phase 4) the staff app accept it. Printed codes can be turned off per gym in **Settings → Member app**, where the booking window and cancellation cutoff are also set.
 
 **Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
 

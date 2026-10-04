@@ -14,8 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { brandingSchema, DAY_NAMES, gymProfileSchema, locationSchema, openingHoursSchema } from "@/lib/validation/settings";
-import { removeGymLogoAction, saveLocationAction, saveOpeningHoursAction, updateBrandingAction, updateGymProfileAction, uploadGymLogoAction } from "./actions";
+import { brandingSchema, DAY_NAMES, gymProfileSchema, locationSchema, memberAppSettingsSchema, openingHoursSchema } from "@/lib/validation/settings";
+import { removeGymLogoAction, saveLocationAction, saveOpeningHoursAction, updateBrandingAction, updateGymProfileAction, updateMemberAppSettingsAction, uploadGymLogoAction } from "./actions";
 
 type ProfileValues = z.input<typeof gymProfileSchema>;
 
@@ -355,5 +355,54 @@ export function LogoControl({ gymSlug, logoUrl, readOnly }: { gymSlug: string; l
         </div>
       )}
     </div>
+  );
+}
+
+type MemberAppValues = z.input<typeof memberAppSettingsSchema>;
+
+export function MemberAppSettingsForm({ gymSlug, defaults, readOnly }: { gymSlug: string; defaults: MemberAppValues; readOnly: boolean }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const form = useForm<MemberAppValues, unknown, z.output<typeof memberAppSettingsSchema>>({ resolver: zodResolver(memberAppSettingsSchema), defaultValues: defaults });
+  const e = form.formState.errors;
+  return (
+    <form
+      noValidate
+      className="grid gap-4 sm:grid-cols-2"
+      onSubmit={form.handleSubmit(() =>
+        startTransition(async () => {
+          const r = await updateMemberAppSettingsAction(gymSlug, form.getValues());
+          if (!r.ok) return void toast.error(r.error);
+          toast.success(r.data.changed ? "Member app settings saved." : "Nothing changed.");
+          router.refresh();
+        })
+      )}
+    >
+      <fieldset disabled={readOnly || pending} className="contents">
+        <div className="grid gap-2">
+          <Label htmlFor="member-days-ahead">Members can book up to (days ahead)</Label>
+          <Input id="member-days-ahead" type="number" min={1} max={60} {...form.register("memberBookingDaysAhead")} aria-invalid={!!e.memberBookingDaysAhead} />
+          <Err message={e.memberBookingDaysAhead?.message} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="member-cancel-hours">Members can cancel until (hours before the class)</Label>
+          <Input id="member-cancel-hours" type="number" min={0} max={72} {...form.register("memberCancelHours")} aria-invalid={!!e.memberCancelHours} />
+          <p className="text-xs text-muted-foreground">Leaving a waitlist is always allowed. Staff can still cancel for members at any time.</p>
+          <Err message={e.memberCancelHours?.message} />
+        </div>
+        <label className="flex items-start gap-3 text-sm sm:col-span-2">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[var(--primary)]" {...form.register("acceptStaticCheckInCodes")} />
+          <span>
+            <span className="font-medium">Accept printed check-in codes</span>
+            <span className="block text-muted-foreground">Turn off to accept only the member app&apos;s live QR code, which changes every 30 seconds and can&apos;t be reused from a screenshot.</span>
+          </span>
+        </label>
+        {!readOnly && (
+          <div className="flex justify-end sm:col-span-2">
+            <Button type="submit">{pending && <Loader2 className="animate-spin" aria-hidden />} Save</Button>
+          </div>
+        )}
+      </fieldset>
+    </form>
   );
 }

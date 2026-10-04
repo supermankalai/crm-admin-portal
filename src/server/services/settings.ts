@@ -7,7 +7,7 @@ import type { RequestMeta } from "@/server/security/request-meta";
 import { getStorage, inspectImage, storageKey } from "@/server/storage";
 import { assertCan, assertWritable, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
-import type { brandingSchema, gymProfileSchema, locationSchema, openingHoursSchema } from "@/lib/validation/settings";
+import type { brandingSchema, gymProfileSchema, locationSchema, memberAppSettingsSchema, openingHoursSchema } from "@/lib/validation/settings";
 
 /**
  * Gym settings (owner only). Every change is audited with a before/after diff. The database
@@ -32,7 +32,7 @@ export async function getSettings(ctx: TenantContext) {
   return inTenant(ctx, async (tx) => {
     const gym = await tx.gym.findUniqueOrThrow({
       where: { id: ctx.gym.id },
-      select: { name: true, email: true, phone: true, address: true, timezone: true, currency: true, taxRateBps: true, brandColor: true, logoFileId: true },
+      select: { name: true, email: true, phone: true, address: true, timezone: true, currency: true, taxRateBps: true, brandColor: true, logoFileId: true, memberBookingDaysAhead: true, memberCancelHours: true, acceptStaticCheckInCodes: true },
     });
     const locations = await tx.location.findMany({
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -155,4 +155,17 @@ export async function removeGymLogo(ctx: TenantContext, meta: RequestMeta) {
     return old?.storageKey ?? null;
   });
   if (oldKey) await getStorage().remove(oldKey);
+}
+
+/** Member app rules: how far ahead members may book, when cancelling closes, printed codes. */
+export async function updateMemberAppSettings(ctx: TenantContext, input: z.infer<typeof memberAppSettingsSchema>, meta: RequestMeta) {
+  guard(ctx);
+  return inTenant(ctx, async (tx) => {
+    const before = await tx.gym.findUniqueOrThrow({ where: { id: ctx.gym.id }, select: { memberBookingDaysAhead: true, memberCancelHours: true, acceptStaticCheckInCodes: true } });
+    const changes = diff(before, input);
+    if (Object.keys(changes).length === 0) return { changed: 0 };
+    await tx.gym.update({ where: { id: ctx.gym.id }, data: input, select: { id: true } });
+    await recordAudit(tx, ctx, { action: "settings.member_app_update", entityType: "Gym", entityId: ctx.gym.id, changes }, meta);
+    return { changed: Object.keys(changes).length };
+  });
 }

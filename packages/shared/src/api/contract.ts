@@ -54,6 +54,17 @@ export const api = {
   // ── Gym ──
   gym: { method: "GET", path: "/gym", auth: "gym", tag: "Gym", summary: "The selected gym: branding, your role and permissions, subscription state", response: s.currentGymSchema },
 
+  // ── Member app ──
+  memberCard: { method: "GET", path: "/member/card", auth: "member", tag: "Member", summary: "Membership card with a rotating, single-use check-in QR code (45 s)", response: s.memberCardResponseSchema },
+  memberMembership: { method: "GET", path: "/member/membership", auth: "member", tag: "Member", summary: "Current, upcoming and past memberships, freeze, credits and renewal reminder", response: s.memberMembershipResponseSchema },
+  memberClasses: { method: "GET", path: "/member/classes", auth: "member", tag: "Member", summary: "Class timetable with spots left and your bookings (gym-local dates)", query: s.classesQuerySchema, response: s.memberClassesResponseSchema },
+  memberBook: { method: "POST", path: "/member/classes/{sessionId}/book", auth: "member", tag: "Member", summary: "Book a class, or join its waitlist when full (never overbooks)", params: s.sessionIdParamsSchema, response: s.memberBookResponseSchema, status: 201 },
+  memberCancelBooking: { method: "DELETE", path: "/member/bookings/{bookingId}", auth: "member", tag: "Member", summary: "Cancel your booking or leave a waitlist (within the gym's rules)", params: s.bookingIdParamsSchema, response: s.memberCancelResponseSchema },
+  memberAttendance: { method: "GET", path: "/member/attendance", auth: "member", tag: "Member", summary: "Your check-in history", query: s.pageQuerySchema, response: s.attendancePageSchema },
+  memberPayments: { method: "GET", path: "/member/payments", auth: "member", tag: "Member", summary: "Your payments", query: s.pageQuerySchema, response: s.paymentsPageSchema },
+  memberInvoices: { method: "GET", path: "/member/invoices", auth: "member", tag: "Member", summary: "Your invoices", query: s.pageQuerySchema, response: s.invoicesPageSchema },
+  memberInvoice: { method: "GET", path: "/member/invoices/{invoiceId}", auth: "member", tag: "Member", summary: "One of your invoices", params: s.invoiceIdParamsSchema, response: s.invoiceDetailSchema },
+
   // ── Staff ──
   createMemberInvite: { method: "POST", path: "/staff/members/{memberId}/app-invite", auth: "staff", tag: "Staff", summary: "Invite a member to the app by email, SMS or a front-desk code", params: s.memberIdParamsSchema, body: s.createMemberInviteRequestSchema, response: s.createMemberInviteResponseSchema, status: 201 },
 } as const satisfies Record<string, Endpoint>;

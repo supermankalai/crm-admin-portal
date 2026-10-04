@@ -212,3 +212,9 @@ export function __resetSessionForTests() {
   resetHooks.clear();
   leaveGymHooks.clear();
 }
+
+/** For tests only: put the session into a given state. */
+export function __setSessionForTests(patch: Partial<SessionState>, token: string | null = "test-access") {
+  accessToken = token;
+  setState(patch);
+}

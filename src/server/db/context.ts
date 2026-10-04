@@ -40,6 +40,15 @@ export function withMember<T>(ctx: { userId: string; gymId: string; memberId: st
   return runInContext(appDb, ctx, fn, options);
 }
 
+/**
+ * A member's own booking action (book / cancel). The transaction may touch the class's bookings
+ * and class-pack credits (waitlist promotion moves others up) — see app_is_member_action().
+ * Use only through inMemberAction() with a verified member context.
+ */
+export function withMemberAction<T>(ctx: { userId: string; gymId: string; memberId: string }, fn: (tx: Tx) => Promise<T>, options?: TxOptions) {
+  return runInContext(appDb, { ...ctx, memberAction: true }, fn, options);
+}
+
 /** A verified super admin in the platform area. Grants platform tables only — never tenant rows. */
 export function withPlatformAdmin<T>(userId: string, fn: (tx: Tx) => Promise<T>, options?: TxOptions) {
   return runInContext(appDb, { userId, platformAdmin: true }, fn, options);

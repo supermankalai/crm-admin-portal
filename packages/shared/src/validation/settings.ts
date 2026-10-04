@@ -120,3 +120,10 @@ export function minutesToHHMM(minutes: number): string {
   if (minutes >= 1440) return "24:00";
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
+
+/** Member app rules for this gym (booking window, cancellation cutoff, printed codes). */
+export const memberAppSettingsSchema = z.object({
+  memberBookingDaysAhead: z.coerce.number().int().min(1, "At least 1 day").max(60, "At most 60 days"),
+  memberCancelHours: z.coerce.number().int().min(0, "0 or more hours").max(72, "At most 72 hours"),
+  acceptStaticCheckInCodes: z.boolean(),
+});

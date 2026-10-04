@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { brandingSchema, gymProfileSchema, locationSchema, openingHoursSchema } from "@/lib/validation/settings";
+import { brandingSchema, gymProfileSchema, locationSchema, memberAppSettingsSchema, openingHoursSchema } from "@/lib/validation/settings";
 import { gymAction, type ActionResult } from "@/server/actions/gym-action";
 import { getRequestMeta } from "@/server/security/request-meta";
-import { removeGymLogo, saveLocation, saveOpeningHours, setGymLogo, updateBranding, updateGymProfile } from "@/server/services/settings";
+import { removeGymLogo, saveLocation, saveOpeningHours, setGymLogo, updateBranding, updateGymProfile, updateMemberAppSettings } from "@/server/services/settings";
 
 // Settings affect every page of the gym (name, colour, time zone, currency), so refresh the layout.
 const refresh = (slug: string) => revalidatePath(`/g/${slug}`, "layout");
@@ -50,4 +50,10 @@ export const removeGymLogoAction = gymAction({ permission: "settings.manage", sc
   await removeGymLogo(ctx, await getRequestMeta());
   refresh(ctx.gym.slug);
   return { removed: true };
+});
+
+export const updateMemberAppSettingsAction = gymAction({ permission: "settings.manage", schema: memberAppSettingsSchema, write: true }, async (ctx, input) => {
+  const r = await updateMemberAppSettings(ctx, input, await getRequestMeta());
+  refresh(ctx.gym.slug);
+  return r;
 });

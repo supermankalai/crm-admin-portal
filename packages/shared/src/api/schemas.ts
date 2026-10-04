@@ -196,3 +196,118 @@ export const pageQuerySchema = z.object({
 export function pageOf<T extends z.ZodType>(item: T) {
   return z.object({ items: z.array(item), nextCursor: z.string().nullable() });
 }
+
+// ─────────────────────────────── Member app ───────────────────────────────
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const membershipViewSchema = z.object({
+  id: z.string(),
+  planName: z.string(),
+  planType: z.enum(["MONTHLY", "QUARTERLY", "YEARLY", "CLASS_PACK"]),
+  state: z.enum(["upcoming", "active", "frozen", "expired", "cancelled"]),
+  startDate: dateOnly,
+  endDate: dateOnly,
+  daysRemaining: z.number().int(),
+  classCreditsRemaining: z.number().int().nullable(),
+  frozen: z.object({ from: dateOnly, to: dateOnly }).nullable(),
+  cancelledAt: isoDateTime.nullable(),
+});
+
+export const memberSummarySchema = z.object({ name: z.string(), memberNumber: z.string() });
+
+export const memberCardResponseSchema = z.object({
+  member: memberSummarySchema,
+  membership: membershipViewSchema.nullable(),
+  /** Rotating check-in code: show it as a QR; fetch a new one every refreshInSeconds. */
+  qr: z.object({ token: z.string(), expiresAt: isoDateTime, refreshInSeconds: z.number().int() }),
+});
+
+export const memberMembershipResponseSchema = z.object({
+  member: memberSummarySchema,
+  current: membershipViewSchema.nullable(),
+  upcoming: z.array(membershipViewSchema),
+  past: z.array(membershipViewSchema),
+  renewal: z.object({ daysLeft: z.number().int(), message: z.string() }).nullable(),
+  rules: z.object({ bookingDaysAhead: z.number().int(), cancelHoursBefore: z.number().int() }),
+});
+
+export const classesQuerySchema = z.object({ from: dateOnly.optional(), to: dateOnly.optional() });
+
+export const memberClassSchema = z.object({
+  id: z.string(),
+  startsAt: isoDateTime,
+  endsAt: isoDateTime,
+  status: z.enum(["SCHEDULED", "CANCELLED", "COMPLETED"]),
+  className: z.string(),
+  classColor: z.string(),
+  description: z.string().nullable(),
+  room: z.string(),
+  location: z.string(),
+  trainer: z.string(),
+  capacity: z.number().int(),
+  booked: z.number().int(),
+  waitlisted: z.number().int(),
+  spotsLeft: z.number().int(),
+  my: z.object({ bookingId: z.string(), status: z.enum(["BOOKED", "WAITLISTED", "ATTENDED", "NO_SHOW"]), waitlistPosition: z.number().int().nullable() }).nullable(),
+  canBook: z.boolean(),
+  canCancel: z.boolean(),
+  /** After this moment a booked spot can't be cancelled in the app. */
+  cancelDeadline: isoDateTime,
+});
+
+export const memberClassesResponseSchema = z.object({
+  from: dateOnly,
+  to: dateOnly,
+  classes: z.array(memberClassSchema),
+  rules: z.object({ bookingDaysAhead: z.number().int(), cancelHoursBefore: z.number().int() }),
+});
+
+export const sessionIdParamsSchema = z.object({ sessionId: z.string().min(1).max(64) });
+export const bookingIdParamsSchema = z.object({ bookingId: z.string().min(1).max(64) });
+export const invoiceIdParamsSchema = z.object({ invoiceId: z.string().min(1).max(64) });
+
+export const memberBookResponseSchema = z.object({ bookingId: z.string(), status: z.enum(["BOOKED", "WAITLISTED"]), waitlistPosition: z.number().int().nullable() });
+export const memberCancelResponseSchema = z.object({ ok: z.literal(true), creditReturned: z.boolean() });
+
+export const attendanceItemSchema = z.object({
+  id: z.string(),
+  checkedInAt: isoDateTime,
+  location: z.string(),
+  allowed: z.boolean(),
+  reason: z.string().nullable(),
+});
+
+export const paymentItemSchema = z.object({
+  id: z.string(),
+  receivedAt: isoDateTime,
+  amountMinor: z.number().int(),
+  refundedMinor: z.number().int(),
+  currency: z.string(),
+  method: z.enum(["CASH", "CARD", "TRANSFER"]),
+  status: z.enum(["COMPLETED", "PARTIALLY_REFUNDED", "REFUNDED", "VOID"]),
+  invoice: z.object({ id: z.string(), number: z.string() }).nullable(),
+});
+
+export const invoiceItemSchema = z.object({
+  id: z.string(),
+  number: z.string(),
+  description: z.string().nullable(),
+  issuedAt: isoDateTime,
+  dueDate: dateOnly,
+  currency: z.string(),
+  totalMinor: z.number().int(),
+  amountPaidMinor: z.number().int(),
+  status: z.enum(["OPEN", "PAID", "VOID", "OVERDUE"]),
+});
+
+export const invoiceDetailSchema = invoiceItemSchema.extend({
+  subtotalMinor: z.number().int(),
+  taxMinor: z.number().int(),
+  gym: z.object({ name: z.string(), address: z.string().nullable(), email: z.string().nullable(), phone: z.string().nullable() }),
+  payments: z.array(paymentItemSchema.omit({ invoice: true })),
+});
+
+export const attendancePageSchema = pageOf(attendanceItemSchema);
+export const paymentsPageSchema = pageOf(paymentItemSchema);
+export const invoicesPageSchema = pageOf(invoiceItemSchema);

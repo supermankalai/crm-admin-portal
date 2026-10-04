@@ -1,7 +1,7 @@
 import "server-only";
 import type { PlanSummary, TenantContext } from "./types";
 import type { SubscriptionAccess } from "@/domain/subscription-access";
-import { withMember, withUser, type Tx } from "@/server/db/context";
+import { withMember, withMemberAction, withUser, type Tx } from "@/server/db/context";
 import { buildContext, GYM_SELECT } from "./resolve";
 
 type UserLike = { id: string; name: string; email: string; isSuperAdmin: boolean };
@@ -36,6 +36,11 @@ export async function resolveMemberContext(user: UserLike, gym: { slug: string }
   // Gym, plan and subscription access are computed exactly as for staff.
   const shared = buildContext(user, account.gym, "OWNER", null, null, now);
   return { kind: "member", user, gym: shared.gym, plan: shared.plan, access: shared.access, memberId: account.memberId, memberAccountId: account.id };
+}
+
+/** A member's booking action: the same booking code staff use, scoped by app_is_member_action(). */
+export function inMemberAction<T>(ctx: MemberContext, fn: (tx: Tx) => Promise<T>) {
+  return withMemberAction({ userId: ctx.user.id, gymId: ctx.gym.id, memberId: ctx.memberId }, fn);
 }
 
 /** Run queries as this member in their gym (member-scoped RLS). */

@@ -10,7 +10,7 @@ import { CURRENCIES, formatTaxPercent, minutesToHHMM, timeZones } from "@/lib/va
 import { planLimitsOf } from "@/server/plan/limits";
 import { getSettings } from "@/server/services/settings";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
-import { BrandingForm, GymProfileForm, LocationDialog, LogoControl, OpeningHoursForm } from "./settings-forms";
+import { BrandingForm, GymProfileForm, LocationDialog, LogoControl, MemberAppSettingsForm, OpeningHoursForm } from "./settings-forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -18,6 +18,7 @@ const TABS = [
   { key: "general", label: "Gym profile" },
   { key: "hours", label: "Locations & hours" },
   { key: "branding", label: "Branding" },
+  { key: "member-app", label: "Member app" },
 ] as const;
 
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ gymSlug: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -107,6 +108,24 @@ export default async function SettingsPage({ params, searchParams }: { params: P
               </Card>
             ))}
           </>
+        )}
+
+        {tab === "member-app" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Member app</CardTitle>
+              <CardDescription>
+                Rules for members booking classes in the app, and which check-in codes the front desk accepts. {plan.features.memberApp ? "" : "Your plan doesn't include the member app yet."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MemberAppSettingsForm
+                gymSlug={ctx.gym.slug}
+                readOnly={readOnly}
+                defaults={{ memberBookingDaysAhead: settings.gym.memberBookingDaysAhead, memberCancelHours: settings.gym.memberCancelHours, acceptStaticCheckInCodes: settings.gym.acceptStaticCheckInCodes }}
+              />
+            </CardContent>
+          </Card>
         )}
 
         {tab === "branding" && (

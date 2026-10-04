@@ -35,3 +35,22 @@ export async function recordAudit(tx: Tx, ctx: TenantContext, event: AuditEvent,
     ],
   });
 }
+
+/** A member's own action through the member app, audited in their gym as the member. */
+export async function recordMemberAudit(tx: Tx, ctx: { user: { id: string }; gym: { id: string } }, event: AuditEvent, meta?: RequestMeta) {
+  await tx.auditLog.createMany({
+    data: [
+      {
+        gymId: ctx.gym.id,
+        actorUserId: ctx.user.id,
+        actorType: "MEMBER",
+        action: event.action,
+        entityType: event.entityType,
+        entityId: event.entityId ?? null,
+        changes: (redact(event.changes ?? {}) ?? {}) as Prisma.InputJsonValue,
+        ip: meta?.ip ?? null,
+        userAgent: meta?.userAgent ?? null,
+      },
+    ],
+  });
+}

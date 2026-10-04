@@ -26,6 +26,9 @@ export type TenantContext = {
     taxRateBps: number;
     brandColor: string;
     logoFileId: string | null;
+    memberBookingDaysAhead: number;
+    memberCancelHours: number;
+    acceptStaticCheckInCodes: boolean;
   };
   /** Null for super admin support access (not a staff member). */
   staffId: string | null;

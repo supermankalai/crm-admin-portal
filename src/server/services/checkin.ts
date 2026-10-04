@@ -6,6 +6,7 @@ import type { MembershipRecord } from "@/domain/membership";
 import { recordAudit } from "@/server/audit/tenant-audit";
 import type { Tx } from "@/server/db/context";
 import { NotFoundError, ValidationError } from "@/server/errors";
+import { QR_REJECTION, verifyMemberQr } from "@/server/mobile/qr";
 import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
@@ -43,11 +44,23 @@ export async function lookupForCheckIn(ctx: TenantContext, raw: string) {
   assertCan(ctx, "checkin.perform");
   const query = parseCheckInQuery(raw);
   if (query.kind === "none") return { method: "NAME_SEARCH" as const, candidates: [] };
+  if (query.kind === "code" && !ctx.gym.acceptStaticCheckInCodes) {
+    throw new ValidationError("Printed check-in codes are turned off at this gym. Ask the member to show the QR code in their FitCRM app.");
+  }
+  // The member app's rotating code: verify for this gym and spend it (a screenshot can't be reused).
+  let signedMemberId: string | null = null;
+  if (query.kind === "signed") {
+    const check = await verifyMemberQr(query.token, ctx.gym.id);
+    if (!check.ok) throw new ValidationError(QR_REJECTION[check.reason]);
+    signedMemberId = check.memberId;
+  }
   const today = todayFor(ctx);
   return inTenant(ctx, async (tx) => {
     const base = visibilityWhere(ctx);
     const where =
-      query.kind === "code"
+      query.kind === "signed"
+        ? { ...base, id: signedMemberId! }
+        : query.kind === "code"
         ? { ...base, checkInCode: query.code }
         : query.kind === "memberNumber"
           ? { ...base, memberNumber: query.value }
@@ -72,7 +85,7 @@ export async function lookupForCheckIn(ctx: TenantContext, raw: string) {
         overdueInvoices: await overdueCount(tx, m.id, today),
       });
     }
-    return { method: query.kind === "code" ? ("QR" as const) : query.kind === "memberNumber" ? ("MEMBER_ID" as const) : ("NAME_SEARCH" as const), candidates };
+    return { method: query.kind === "code" || query.kind === "signed" ? ("QR" as const) : query.kind === "memberNumber" ? ("MEMBER_ID" as const) : ("NAME_SEARCH" as const), candidates };
   });
 }
 

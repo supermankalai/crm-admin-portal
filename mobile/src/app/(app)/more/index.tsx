@@ -38,6 +38,14 @@ export default function MoreScreen() {
         )}
       </Card>
 
+      {gym?.role === "MEMBER" ? (
+        <Card className="p-0">
+          <ListRow icon="card-outline" title="My membership" subtitle="Plan, dates, freeze and credits" onPress={() => router.push("/card/membership")} />
+          <ListRow icon="footsteps-outline" title="Attendance" subtitle="Your check-in history" onPress={() => router.push("/more/attendance")} />
+          <ListRow icon="wallet-outline" title="Payments & invoices" onPress={() => router.push("/more/payments")} />
+        </Card>
+      ) : null}
+
       <Card className="p-0">
         {canSwitch ? (
           <ListRow

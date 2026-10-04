@@ -2,13 +2,11 @@
 
 This is the Expo app (SDK 57, React Native 0.86, TypeScript strict) for gym staff, trainers and members. It talks only to the FitCRM backend's mobile API (`/api/mobile/v1`), using the shared contract in [`../packages/shared`](../packages/shared). The design is in [docs/MOBILE_DESIGN.md](../docs/MOBILE_DESIGN.md).
 
-> **Status:** mobile Phase 2 of 7. Done so far:
-> - sign-in with a password, a one-time code or a gym invite;
-> - biometric app lock;
-> - gym switching with gym branding;
-> - bottom tabs by role, with the More tab (devices, password, app lock, sign-out).
+> **Status:** mobile Phase 3 of 7. Done so far:
+> - sign-in, biometric lock, gym switching, branding, and tabs by role;
+> - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, and payments and invoices.
 >
-> The other tabs are placeholders until their phase.
+> The staff, trainer, workout and progress tabs are placeholders until their phase.
 
 ## Running it
 
@@ -58,6 +56,13 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 | `frontdesk1@irontemple.example` | `GymStaff#2026` | Front-desk tabs |
 | `trainer1@irontemple.example` | `GymStaff#2026` | Trainer tabs |
 | `priya.nair@fitcrm.example` | `GymStaff#2026` | Trainer at Iron Temple, Manager at Zen Strength |
+
+**Member features to try** (as `member1@irontemple.example`):
+- **My card:** the QR code changes every 30 seconds. Screenshots are blocked on the card, and the screen brightens while it's open.
+  - To check in with it, open the web portal's **Check-in** page as `frontdesk1@irontemple.example` and use **Scan with camera** (Chrome) on your phone's screen.
+  - A second scan of the same code, or of a screenshot, is refused. Under Settings → Member app, an owner can stop accepting printed codes.
+- **Classes:** book, see "Booked" or your waitlist number, and cancel or leave the waitlist. A booked spot can't be cancelled less than 2 hours before the class (the default, set per gym in Settings → Member app).
+- **More → My membership, Attendance, Payments & invoices.**
 
 To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
 
