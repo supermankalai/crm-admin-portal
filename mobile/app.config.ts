@@ -44,6 +44,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-router",
     ["expo-splash-screen", { backgroundColor: "#ea580c", image: "./assets/images/splash-icon.png", imageWidth: 76 }],
     ["expo-secure-store", { configureAndroidBackup: true, faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
+    // Camera for scanning members' QR codes at the front desk (no microphone, no recording).
+    ["expo-camera", { cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan members' check-in QR codes.", microphonePermission: false, recordAudioAndroid: false }],
     ["expo-local-authentication", { faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
     [
       "expo-build-properties",

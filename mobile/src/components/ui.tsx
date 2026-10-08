@@ -159,3 +159,29 @@ export function ListRow({ title, subtitle, icon, onPress, right, accessibilityHi
     content
   );
 }
+
+/** A single-choice row of chips (filters, payment method, location). */
+export function ChipGroup<T extends string | undefined>({ label, options, value, onChange }: { label?: string; options: readonly { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  return (
+    <View className="gap-1.5">
+      {label ? <Text className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{label}</Text> : null}
+      <View accessibilityRole="radiogroup" accessibilityLabel={label} className="flex-row flex-wrap gap-2">
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <Pressable
+              key={o.label}
+              accessibilityRole="radio"
+              accessibilityLabel={o.label}
+              accessibilityState={{ selected: on, checked: on }}
+              onPress={() => onChange(o.value)}
+              className={`min-h-11 justify-center rounded-full border px-4 ${on ? "border-zinc-900 bg-zinc-900 dark:border-zinc-50 dark:bg-zinc-50" : "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"}`}
+            >
+              <Text className={on ? "font-semibold text-white dark:text-zinc-900" : "text-zinc-800 dark:text-zinc-200"}>{o.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}

@@ -14,6 +14,15 @@ export const TABS_BY_ROLE: Record<GymRole, readonly TabKey[]> = {
   MEMBER: ["card", "classes", "workouts", "progress", "more"],
 };
 
+/**
+ * Routes a role may open without a tab of their own: owners and managers reach the check-in
+ * scanner from the dashboard.
+ */
+export const EXTRA_ROUTES_BY_ROLE: Partial<Record<GymRole, readonly TabKey[]>> = {
+  OWNER: ["checkin"],
+  MANAGER: ["checkin"],
+};
+
 /** Declaration order of the tab routes (the visible order follows it). */
 export const ALL_TABS: readonly TabKey[] = ["dashboard", "checkin", "schedule", "card", "members", "clients", "classes", "workouts", "alerts", "plans", "progress", "more"];
 
@@ -34,6 +43,10 @@ export const TAB_META: Record<TabKey, { title: string; icon: string; iconActive:
 
 export function tabsFor(role: GymRole | null | undefined): readonly TabKey[] {
   return role ? TABS_BY_ROLE[role] : [];
+}
+
+export function routesFor(role: GymRole | null | undefined): readonly TabKey[] {
+  return role ? [...TABS_BY_ROLE[role], ...(EXTRA_ROUTES_BY_ROLE[role] ?? [])] : [];
 }
 
 export function homeTab(role: GymRole): TabKey {

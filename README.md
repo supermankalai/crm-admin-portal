@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 3 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history). See [mobile/README.md](mobile/README.md).**
+> **Build status: all 8 web phases complete. Mobile app: Phase 4 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -428,7 +428,12 @@ curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessTo
   - the gym is bound into the HMAC;
   - it is single-use: the first scan spends the nonce, so screenshots don't work.
 
-  The web check-in page and (from Phase 4) the staff app accept it. Printed codes can be turned off per gym in **Settings → Member app**, where the booking window and cancellation cutoff are also set.
+  The web check-in page and the staff app accept it. Printed codes can be turned off per gym in **Settings → Member app**, where the booking window and cancellation cutoff are also set.
+
+**Staff endpoints** (`/staff/*`) run as the staff member, through the same services as the web portal:
+- **Covered:** check-in (QR scan, member number or name), dashboard, alerts, member search and profile, adding members, selling memberships, recording payments, and the class overview.
+- **Same rules as the web:** role permissions, plan limits and audit all apply. Writes are refused with `409 read_only` while a gym is read-only.
+- **Money by role:** front desk sees no revenue, and trainers see neither revenue nor overdue payments.
 
 **Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
 

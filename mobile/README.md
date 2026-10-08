@@ -2,11 +2,12 @@
 
 This is the Expo app (SDK 57, React Native 0.86, TypeScript strict) for gym staff, trainers and members. It talks only to the FitCRM backend's mobile API (`/api/mobile/v1`), using the shared contract in [`../packages/shared`](../packages/shared). The design is in [docs/MOBILE_DESIGN.md](../docs/MOBILE_DESIGN.md).
 
-> **Status:** mobile Phase 3 of 7. Done so far:
+> **Status:** mobile Phase 4 of 7. Done so far:
 > - sign-in, biometric lock, gym switching, branding, and tabs by role;
-> - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, and payments and invoices.
+> - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, and payments and invoices;
+> - **front desk, owner and manager features**: QR check-in scanner, dashboard, member search and profiles, add member, sell memberships, record payments, alerts, and the class overview.
 >
-> The staff, trainer, workout and progress tabs are placeholders until their phase.
+> The trainer, workout and progress tabs are placeholders until their phase.
 
 ## Running it
 
@@ -37,7 +38,7 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 ```
 
 **Expo Go vs a development build:**
-- Expo Go (install the version for **SDK 57**) runs everything in this phase.
+- Expo Go (install the version for **SDK 57**) runs everything in this phase, including the camera scanner.
 - **Face ID** is the exception: Expo Go can't use it on iPhone, so the app lock falls back to your passcode there.
 - Fingerprint unlock on Android works in Expo Go.
 - A development build has real Face ID and, from Phase 6, push notifications:
@@ -63,6 +64,22 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
   - A second scan of the same code, or of a screenshot, is refused. Under Settings → Member app, an owner can stop accepting printed codes.
 - **Classes:** book, see "Booked" or your waitlist number, and cancel or leave the waitlist. A booked spot can't be cancelled less than 2 hours before the class (the default, set per gym in Settings → Member app).
 - **More → My membership, Attendance, Payments & invoices.**
+
+**Staff features to try:**
+- **Front desk** (`frontdesk1@irontemple.example`):
+  - Open the **Check-in** tab, tap *Scan with camera*, and point it at a member's live card. The card can be on a second phone signed in as `member1@irontemple.example`.
+  - The result fills the screen: green for allowed, red with the reason otherwise. Scanning the same code again is refused as already used.
+  - You can also search by name or member number.
+- **Members tab:**
+  - search and filter;
+  - open a profile, then record a payment on an open invoice or sell a membership;
+  - *Add member*, then *Save and sell membership*, for a quick sign-up;
+  - *Invite to the member app* with a code, which the member enters under *I have an invite*.
+- **Owner** (`owner@irontemple.example`):
+  - **Dashboard** shows check-ins, revenue today and this month, active members, expiring memberships, overdue payments and today's classes. *Check in a member* opens the scanner.
+  - **Alerts** lists expiring memberships, overdue invoices and full classes.
+  - The front desk sees no revenue.
+- **Classes** (any staff): the next 7 days with booking numbers. Tap a class for its booking list and waitlist. Trainers see only their own classes.
 
 To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
 

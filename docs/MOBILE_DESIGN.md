@@ -380,3 +380,17 @@ all followed by the usual gate (migrate, seed, typecheck, lint, tests, web build
 - **QR.** The token is `FCM2.<memberId>.<exp>.<nonce>.<sig>`: an HMAC with a purpose-derived key and the gym id as part of the MAC input, a 45 s lifetime with 5 s of clock skew, and a nonce spent through `rate_limit_hit` (limit 1).
 - **Gym rules.** `Gym.memberBookingDaysAhead` (14), `memberCancelHours` (2) and `acceptStaticCheckInCodes` (true) are editable in web Settings → Member app and audited.
 - **App.** The card query is `sensitive` (memory only), refetches every 30 s, blocks screen capture and raises brightness. Payment, invoice and attendance history is also memory-only. The timetable and membership are cached for offline viewing.
+
+## 13. Notes from mobile Phase 4
+
+- **Staff endpoints** (`/staff/*`) are thin adapters in `src/server/services/staff-app.ts` over the services the web portal uses. Permissions, plan limits, encryption, audit and RLS all apply unchanged, and request bodies are the web forms' own Zod schemas.
+- **Read-only gyms.** The web's action wrapper checks `assertWritable`; the services don't. Every staff write endpoint (check-in, add member, sell, record payment) therefore calls it itself, and returns `409 read_only` while reads keep working. A test covers all three.
+- **Money by role.** `revenue` is null without `dashboard.financials` (front desk, trainers). `overdue` is null without `payments.view` (trainers). Profiles hide payments and invoices for roles that can't see them, and the `can` flags drive which buttons the app shows.
+- **Check-in.** A scanned code goes to `/staff/check-in/lookup`:
+  - Spent, expired or foreign codes return `422` with the reason, shown full-screen in red.
+  - A single match is checked in straight away.
+  - The app ignores repeat frames of the same code for 4 s, so one member isn't scanned twice.
+  - The camera runs only while the Check-in screen is open.
+- **Owners and managers** reach Check-in from the dashboard. The route is allowed for their role but has no tab button (`EXTRA_ROUTES_BY_ROLE`).
+- **Offline.** The dashboard, alerts, member lists, profiles and class rosters are `sensitive` (memory only, because they hold names and money). Check-in locations, plans and the class timetable are cached.
+- **Shared package dependencies.** `@fitcrm/shared` declares `zod` and `@date-fns/tz` as peer dependencies. The mobile app installs both, and Metro pins imports from the shared folder to the app's own copies.

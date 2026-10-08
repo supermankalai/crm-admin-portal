@@ -1,4 +1,6 @@
 import type { z } from "zod";
+import { memberSchema } from "../validation/members";
+import { checkInLookupSchema, checkInSchema, recordPaymentSchema, sellMembershipSchema } from "../validation/payments";
 import * as s from "./schemas";
 
 /**
@@ -65,7 +67,20 @@ export const api = {
   memberInvoices: { method: "GET", path: "/member/invoices", auth: "member", tag: "Member", summary: "Your invoices", query: s.pageQuerySchema, response: s.invoicesPageSchema },
   memberInvoice: { method: "GET", path: "/member/invoices/{invoiceId}", auth: "member", tag: "Member", summary: "One of your invoices", params: s.invoiceIdParamsSchema, response: s.invoiceDetailSchema },
 
-  // ── Staff ──
+  // ── Staff ── (request bodies are the same Zod schemas the web forms use)
+  staffCheckInSetup: { method: "GET", path: "/staff/check-in", auth: "staff", tag: "Staff", summary: "Check-in locations and today's counts", response: s.checkInSetupResponseSchema },
+  staffCheckInLookup: { method: "POST", path: "/staff/check-in/lookup", auth: "staff", tag: "Staff", summary: "Find a member by scanned QR (app or printed), member number or name", body: checkInLookupSchema, response: s.checkInLookupResponseSchema },
+  staffCheckIn: { method: "POST", path: "/staff/check-in", auth: "staff", tag: "Staff", summary: "Check a member in (allowed or denied with the reason; every attempt is recorded)", body: checkInSchema, response: s.checkInResponseSchema, status: 201 },
+  staffDashboard: { method: "GET", path: "/staff/dashboard", auth: "staff", tag: "Staff", summary: "Today's figures (money only for roles that may see it)", response: s.staffDashboardResponseSchema },
+  staffAlerts: { method: "GET", path: "/staff/alerts", auth: "staff", tag: "Staff", summary: "Expiring memberships, overdue payments and full classes", response: s.staffAlertsResponseSchema },
+  staffMembers: { method: "GET", path: "/staff/members", auth: "staff", tag: "Staff", summary: "Search and filter members", query: s.staffMembersQuerySchema, response: s.staffMembersResponseSchema },
+  staffMember: { method: "GET", path: "/staff/members/{memberId}", auth: "staff", tag: "Staff", summary: "A member's profile, status, payments and attendance", params: s.memberIdParamsSchema, response: s.staffMemberProfileSchema },
+  staffCreateMember: { method: "POST", path: "/staff/members", auth: "staff", tag: "Staff", summary: "Quick member sign-up (same rules as the web)", body: memberSchema, response: s.createMemberResponseSchema, status: 201 },
+  staffPlans: { method: "GET", path: "/staff/plans", auth: "staff", tag: "Staff", summary: "Active membership plans for selling", response: s.staffPlansResponseSchema },
+  staffSellMembership: { method: "POST", path: "/staff/memberships/sell", auth: "staff", tag: "Staff", summary: "Sell or renew a membership with an optional payment", body: sellMembershipSchema, response: s.sellResponseSchema, status: 201 },
+  staffRecordPayment: { method: "POST", path: "/staff/payments", auth: "staff", tag: "Staff", summary: "Record a payment against an open invoice", body: recordPaymentSchema, response: s.recordPaymentResponseSchema, status: 201 },
+  staffClasses: { method: "GET", path: "/staff/classes", auth: "staff", tag: "Staff", summary: "Classes with booking numbers (trainers: their own)", query: s.classesQuerySchema, response: s.staffClassesResponseSchema },
+  staffClass: { method: "GET", path: "/staff/classes/{sessionId}", auth: "staff", tag: "Staff", summary: "One class with its bookings and waitlist", params: s.sessionIdParamsSchema, response: s.staffClassDetailSchema },
   createMemberInvite: { method: "POST", path: "/staff/members/{memberId}/app-invite", auth: "staff", tag: "Staff", summary: "Invite a member to the app by email, SMS or a front-desk code", params: s.memberIdParamsSchema, body: s.createMemberInviteRequestSchema, response: s.createMemberInviteResponseSchema, status: 201 },
 } as const satisfies Record<string, Endpoint>;
 

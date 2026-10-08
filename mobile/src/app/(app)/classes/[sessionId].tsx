@@ -1,17 +1,91 @@
 import { useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusChip } from "@/components/status-chip";
-import { Banner, Button, Card, EmptyState, FormError } from "@/components/ui";
+import { Banner, Button, Card, EmptyState, FormError, ListRow } from "@/components/ui";
 import { useOnline } from "@/hooks/use-online";
 import { useSession } from "@/hooks/use-session";
 import { errorMessage } from "@/lib/errors";
 import { dateTime, dayLabel, time } from "@/lib/format";
 import { useBookClass, useCancelBooking, useMemberClasses } from "@/lib/member-queries";
 import { classBadge, spotsText } from "@/lib/classes";
+import { bookingText } from "@/lib/staff";
+import { useStaffClass } from "@/lib/staff-queries";
+import { tabsFor } from "@/nav/tabs";
 
-/** One class: details, your status, and Book / Join waitlist / Cancel — all confirmed by the server. */
+const BOOKING_STATUS: Record<string, { label: string; tone: "green" | "amber" | "red" | "zinc" | "sky" }> = {
+  BOOKED: { label: "Booked", tone: "sky" },
+  ATTENDED: { label: "Attended", tone: "green" },
+  NO_SHOW: { label: "No-show", tone: "red" },
+  WAITLISTED: { label: "Waitlist", tone: "amber" },
+  CANCELLED: { label: "Cancelled", tone: "zinc" },
+};
+
 export default function ClassDetail() {
+  const { gym } = useSession();
+  return gym?.role === "MEMBER" ? <MemberClassDetail /> : <StaffClassDetail />;
+}
+
+/** Staff: one class with its booking list and waitlist. */
+function StaffClassDetail() {
+  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const router = useRouter();
+  const { gym } = useSession();
+  const tz = gym?.timezone ?? "UTC";
+  const q = useStaffClass(sessionId);
+  const canOpenMembers = tabsFor(gym?.role).includes("members");
+  const c = q.data;
+  if (!c) return <EmptyState icon="calendar-outline" title={q.isPending ? "Loading…" : "Class not found"} description={q.error ? errorMessage(q.error) : undefined} />;
+  const booked = c.bookings.filter((b) => b.status !== "WAITLISTED" && b.status !== "CANCELLED");
+  const waiting = c.bookings.filter((b) => b.status === "WAITLISTED").sort((a, b) => (a.waitlistPosition ?? 0) - (b.waitlistPosition ?? 0));
+  const row = (b: (typeof c.bookings)[number]) => {
+    const st = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "zinc" as const };
+    return (
+      <ListRow
+        key={b.bookingId}
+        title={b.name}
+        subtitle={`#${b.memberNumber}`}
+        right={<StatusChip label={b.status === "WAITLISTED" && b.waitlistPosition ? `Waitlist #${b.waitlistPosition}` : st.label} tone={st.tone} />}
+        onPress={canOpenMembers ? () => router.push({ pathname: "/members/[memberId]", params: { memberId: b.memberId } }) : undefined}
+      />
+    );
+  };
+
+  return (
+    <ScrollView className="flex-1 bg-zinc-50 dark:bg-zinc-950" contentContainerClassName="gap-4 p-4 pb-10">
+      <Card className="gap-2">
+        <Text accessibilityRole="header" className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+          {c.className}
+        </Text>
+        <Text className="text-base text-zinc-600 dark:text-zinc-400">
+          {dayLabel(c.startsAt, tz)} · {time(c.startsAt, tz)}–{time(c.endsAt, tz)}
+        </Text>
+        <Text className="text-base text-zinc-700 dark:text-zinc-300">
+          {c.trainer} · {c.room}, {c.location}
+        </Text>
+        <Text className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{bookingText(c)}</Text>
+        {c.status === "CANCELLED" ? <StatusChip label="Cancelled" tone="zinc" /> : null}
+      </Card>
+      <Text accessibilityRole="header" className="px-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        Booked ({booked.length})
+      </Text>
+      <View className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        {booked.length ? booked.map(row) : <Text className="p-4 text-base text-zinc-500 dark:text-zinc-400">No bookings yet.</Text>}
+      </View>
+      {waiting.length ? (
+        <>
+          <Text accessibilityRole="header" className="px-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Waitlist ({waiting.length})
+          </Text>
+          <View className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">{waiting.map(row)}</View>
+        </>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+/** Member: one class with details, your status, and Book / Join waitlist / Cancel, all confirmed by the server. */
+function MemberClassDetail() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { gym } = useSession();
   const tz = gym?.timezone ?? "UTC";

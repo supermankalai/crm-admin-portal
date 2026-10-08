@@ -5,12 +5,13 @@ const { withNativeWind } = require("nativewind/metro");
 /**
  * The app lives next to the web app (not in its npm workspace, because the two pin different
  * React versions). It imports TypeScript source from ../packages/shared, so Metro watches that
- * folder and maps "@fitcrm/shared" to it. Bare imports made *from* the shared package (zod) must
+ * folder and maps "@fitcrm/shared" to it. Bare imports made *from* the shared package (its peer
+ * dependencies, zod and @date-fns/tz) must
  * still resolve to this app's node_modules — never the web app's — so there's one copy of each.
  */
 const projectRoot = __dirname;
 const sharedRoot = path.resolve(projectRoot, "../packages/shared");
-const PINNED_TO_APP = ["zod"];
+const PINNED_TO_APP = ["zod", "@date-fns/tz"];
 
 const config = getDefaultConfig(projectRoot);
 config.watchFolders = [sharedRoot];
