@@ -49,3 +49,6 @@ REVOKE INSERT, DELETE ON "gym-admin-portal"."MobileDeviceSession" FROM gym_app;
 
 -- Member app accounts are disabled, never deleted (the audit trail refers to them).
 REVOKE DELETE ON "gym-admin-portal"."MemberAccount" FROM gym_app;
+
+-- Personal training sessions are cancelled (status), never deleted.
+REVOKE DELETE ON "gym-admin-portal"."TrainingSession" FROM gym_app;

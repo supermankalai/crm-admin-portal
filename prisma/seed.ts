@@ -18,6 +18,7 @@ async function main() {
   const { at, id, int, past } = await import("./seed/lib");
   const { seedGym } = await import("./seed/gym");
   const { seedMemberApp } = await import("./seed/member-app");
+  const { removeSeededPhotoFiles, seedFitness } = await import("./seed/fitness");
 
   const env = getEnv();
   if (!env.MIGRATION_DATABASE_URL) throw new Error("MIGRATION_DATABASE_URL is required to seed");
@@ -27,6 +28,7 @@ async function main() {
   const started = Date.now();
   try {
     console.log("Clearing existing data…");
+    await removeSeededPhotoFiles(db);
     const tables = await db.$queryRaw<{ tablename: string }[]>`
       SELECT tablename FROM pg_tables WHERE schemaname = ${env.DATABASE_SCHEMA} AND tablename <> '_prisma_migrations'`;
     if (tables.length) {
@@ -66,6 +68,9 @@ async function main() {
 
     console.log("Member app accounts…");
     await seedMemberApp(db, { memberPasswordHash: await hashPassword(PASSWORDS.member) });
+
+    console.log("Workouts, progress and PT sessions…");
+    await seedFitness(db);
 
     console.log(`\n✔ Seed complete in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     console.log(`  Super admin: ${SUPER_ADMIN.email} / ${PASSWORDS.superAdmin}`);

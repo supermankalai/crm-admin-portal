@@ -11,6 +11,7 @@ import { useBookClass, useCancelBooking, useMemberClasses } from "@/lib/member-q
 import { classBadge, spotsText } from "@/lib/classes";
 import { bookingText } from "@/lib/staff";
 import { useStaffClass } from "@/lib/staff-queries";
+import { useMarkAttendance } from "@/lib/fitness-queries";
 import { tabsFor } from "@/nav/tabs";
 
 const BOOKING_STATUS: Record<string, { label: string; tone: "green" | "amber" | "red" | "zinc" | "sky" }> = {
@@ -34,20 +35,36 @@ function StaffClassDetail() {
   const tz = gym?.timezone ?? "UTC";
   const q = useStaffClass(sessionId);
   const canOpenMembers = tabsFor(gym?.role).includes("members");
+  const online = useOnline();
+  const attendance = useMarkAttendance(sessionId);
   const c = q.data;
   if (!c) return <EmptyState icon="calendar-outline" title={q.isPending ? "Loading…" : "Class not found"} description={q.error ? errorMessage(q.error) : undefined} />;
   const booked = c.bookings.filter((b) => b.status !== "WAITLISTED" && b.status !== "CANCELLED");
   const waiting = c.bookings.filter((b) => b.status === "WAITLISTED").sort((a, b) => (a.waitlistPosition ?? 0) - (b.waitlistPosition ?? 0));
+  const markable = c.canMarkAttendance && online && !!gym?.access.writable;
   const row = (b: (typeof c.bookings)[number]) => {
     const st = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "zinc" as const };
+    const chip = <StatusChip label={b.status === "WAITLISTED" && b.waitlistPosition ? `Waitlist #${b.waitlistPosition}` : st.label} tone={st.tone} />;
+    const confirmed = ["BOOKED", "ATTENDED", "NO_SHOW"].includes(b.status);
     return (
-      <ListRow
-        key={b.bookingId}
-        title={b.name}
-        subtitle={`#${b.memberNumber}`}
-        right={<StatusChip label={b.status === "WAITLISTED" && b.waitlistPosition ? `Waitlist #${b.waitlistPosition}` : st.label} tone={st.tone} />}
-        onPress={canOpenMembers ? () => router.push({ pathname: "/members/[memberId]", params: { memberId: b.memberId } }) : undefined}
-      />
+      <View key={b.bookingId}>
+        <ListRow
+          title={b.name}
+          subtitle={`#${b.memberNumber}`}
+          right={chip}
+          onPress={canOpenMembers ? () => router.push({ pathname: "/members/[memberId]", params: { memberId: b.memberId } }) : undefined}
+        />
+        {markable && confirmed ? (
+          <View className="flex-row gap-2 px-4 pb-3">
+            <View className="flex-1">
+              <Button label="Attended" variant={b.status === "ATTENDED" ? "primary" : "secondary"} icon="checkmark-outline" onPress={() => attendance.mutate({ bookingId: b.bookingId, attended: true })} disabled={attendance.isPending} accessibilityHint={`Marks ${b.name} as attended`} />
+            </View>
+            <View className="flex-1">
+              <Button label="No-show" variant={b.status === "NO_SHOW" ? "danger" : "secondary"} icon="close-outline" onPress={() => attendance.mutate({ bookingId: b.bookingId, attended: false })} disabled={attendance.isPending} accessibilityHint={`Marks ${b.name} as a no-show`} />
+            </View>
+          </View>
+        ) : null}
+      </View>
     );
   };
 
@@ -65,7 +82,9 @@ function StaffClassDetail() {
         </Text>
         <Text className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{bookingText(c)}</Text>
         {c.status === "CANCELLED" ? <StatusChip label="Cancelled" tone="zinc" /> : null}
+        {c.canMarkAttendance ? <Text className="text-sm text-zinc-500 dark:text-zinc-400">Mark who came — open from 30 minutes before the class until a day after.</Text> : null}
       </Card>
+      <FormError message={attendance.error ? errorMessage(attendance.error) : null} />
       <Text accessibilityRole="header" className="px-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Booked ({booked.length})
       </Text>

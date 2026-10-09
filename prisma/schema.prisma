@@ -152,21 +152,21 @@ model User {
   /// Encrypted (platform scope) + platform-wide blind index for phone login.
   phoneEnc        String?
   phoneBlindIndex String?   @unique
-  name           String
-  passwordHash   String
-  isSuperAdmin   Boolean   @default(false)
-  sessionVersion Int       @default(1)
-  lastLoginAt    DateTime? @db.Timestamptz(3)
-  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+  name            String
+  passwordHash    String
+  isSuperAdmin    Boolean   @default(false)
+  sessionVersion  Int       @default(1)
+  lastLoginAt     DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
   staff          StaffMember[]
   memberAccounts MemberAccount[]
   deviceSessions MobileDeviceSession[]
   loginOtps      LoginOtp[]
-  resetTokens   PasswordResetToken[]
-  notifications Notification[]
-  supportAccess SupportAccessSession[]
+  resetTokens    PasswordResetToken[]
+  notifications  Notification[]
+  supportAccess  SupportAccessSession[]
 }
 
 model PasswordResetToken {
@@ -209,25 +209,25 @@ model PlatformPlan {
 }
 
 model Gym {
-  id         String    @id @default(cuid(2))
-  slug       String    @unique
-  name       String
-  status     GymStatus @default(TRIAL)
-  timezone   String    @default("Asia/Kolkata")
-  currency   String    @default("INR")
-  taxRateBps Int       @default(1800)
-  brandColor String    @default("#ea580c")
-  logoFileId String?
-  email      String?
-  phone      String?
-  address    String?
+  id                       String    @id @default(cuid(2))
+  slug                     String    @unique
+  name                     String
+  status                   GymStatus @default(TRIAL)
+  timezone                 String    @default("Asia/Kolkata")
+  currency                 String    @default("INR")
+  taxRateBps               Int       @default(1800)
+  brandColor               String    @default("#ea580c")
+  logoFileId               String?
+  email                    String?
+  phone                    String?
+  address                  String?
   /// Member app rules: how far ahead members may book, and the latest cancellation (hours before).
-  memberBookingDaysAhead   Int     @default(14)
-  memberCancelHours        Int     @default(2)
+  memberBookingDaysAhead   Int       @default(14)
+  memberCancelHours        Int       @default(2)
   /// Accept printed/static check-in codes as well as the member app's rotating QR code.
-  acceptStaticCheckInCodes Boolean @default(true)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+  acceptStaticCheckInCodes Boolean   @default(true)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime  @updatedAt @db.Timestamptz(3)
 
   subscription        GymSubscription?
   subscriptionHistory SubscriptionHistory[]
@@ -257,6 +257,14 @@ model Gym {
   auditLogs           AuditLog[]
   memberAccounts      MemberAccount[]
   memberAppInvites    MemberAppInvite[]
+  workoutPlans        WorkoutPlan[]
+  workoutPlanDays     WorkoutPlanDay[]
+  workoutExercises    WorkoutExercise[]
+  workoutCompletions  WorkoutCompletion[]
+  progressEntries     ProgressEntry[]
+  progressPhotos      ProgressPhoto[]
+  trainerClientNotes  TrainerClientNote[]
+  trainingSessions    TrainingSession[]
 }
 
 model GymSubscription {
@@ -375,6 +383,9 @@ model StaffMember {
   classesTaught    ClassSession[]
   filesUploaded    FileAsset[]
   appInvitesSent   MemberAppInvite[]
+  workoutPlans     WorkoutPlan[]
+  clientNotes      TrainerClientNote[]
+  trainingSessions TrainingSession[]
 
   @@unique([gymId, id])
   @@unique([gymId, userId])
@@ -533,17 +544,23 @@ model Member {
   createdAt           DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
 
-  gym         Gym             @relation(fields: [gymId], references: [id])
-  photo       FileAsset?      @relation(fields: [gymId, photoFileId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
-  notes       MemberNote[]
-  memberships Membership[]
-  invoices    Invoice[]
-  payments    Payment[]
-  checkIns    CheckIn[]
-  bookings    Booking[]
-  trainers    TrainerClient[]
-  appAccount  MemberAccount?
-  appInvites  MemberAppInvite[]
+  gym                Gym                 @relation(fields: [gymId], references: [id])
+  photo              FileAsset?          @relation(fields: [gymId, photoFileId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  notes              MemberNote[]
+  memberships        Membership[]
+  invoices           Invoice[]
+  payments           Payment[]
+  checkIns           CheckIn[]
+  bookings           Booking[]
+  trainers           TrainerClient[]
+  appAccount         MemberAccount?
+  appInvites         MemberAppInvite[]
+  workoutPlans       WorkoutPlan[]
+  workoutCompletions WorkoutCompletion[]
+  progressEntries    ProgressEntry[]
+  progressPhotos     ProgressPhoto[]
+  trainerNotes       TrainerClientNote[]
+  trainingSessions   TrainingSession[]
 
   @@unique([gymId, id])
   @@unique([gymId, memberNumber])
@@ -895,22 +912,22 @@ model MemberAccount {
 /// An invitation for a member to use the app: email/SMS link or a short front-desk code.
 /// Only the token's hash is stored; single use; expires.
 model MemberAppInvite {
-  id          String              @id @default(cuid(2))
-  gymId       String
-  memberId    String
-  channel     MemberInviteChannel
-  tokenHash   String              @unique
+  id              String              @id @default(cuid(2))
+  gymId           String
+  memberId        String
+  channel         MemberInviteChannel
+  tokenHash       String              @unique
   /// The identity the account will be bound to (exactly one is set).
-  email       String?
-  phoneEnc    String?
+  email           String?
+  phoneEnc        String?
   /// Platform-scope blind index of the phone (matches User.phoneBlindIndex).
   phoneBlindIndex String?
-  expiresAt   DateTime            @db.Timestamptz(3)
-  usedAt      DateTime?           @db.Timestamptz(3)
-  revokedAt   DateTime?           @db.Timestamptz(3)
-  createdById String
-  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+  expiresAt       DateTime            @db.Timestamptz(3)
+  usedAt          DateTime?           @db.Timestamptz(3)
+  revokedAt       DateTime?           @db.Timestamptz(3)
+  createdById     String
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
 
   gym       Gym         @relation(fields: [gymId], references: [id])
   member    Member      @relation(fields: [gymId, memberId], references: [gymId, id])
@@ -971,4 +988,174 @@ model MobileRefreshToken {
   session MobileDeviceSession @relation(fields: [sessionId], references: [id])
 
   @@index([sessionId])
+}
+
+// ─────────────────────────── Trainer & member fitness (mobile Phase 5) ───────────────────────────
+
+enum WorkoutPlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum TrainingSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+/// A workout plan written by a trainer. Without a member it is a template; assigning a template
+/// copies it into a plan for that member. Notes are encrypted.
+model WorkoutPlan {
+  id        String            @id @default(cuid(2))
+  gymId     String
+  trainerId String
+  memberId  String?
+  title     String
+  notesEnc  String?
+  status    WorkoutPlanStatus @default(DRAFT)
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime          @updatedAt @db.Timestamptz(3)
+
+  gym     Gym              @relation(fields: [gymId], references: [id])
+  trainer StaffMember      @relation(fields: [gymId, trainerId], references: [gymId, id])
+  member  Member?          @relation(fields: [gymId, memberId], references: [gymId, id])
+  days    WorkoutPlanDay[]
+
+  @@unique([gymId, id])
+  @@index([gymId, trainerId])
+  @@index([gymId, memberId, status])
+}
+
+model WorkoutPlanDay {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  planId    String
+  position  Int
+  title     String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym         Gym                 @relation(fields: [gymId], references: [id])
+  plan        WorkoutPlan         @relation(fields: [gymId, planId], references: [gymId, id], onDelete: Cascade)
+  exercises   WorkoutExercise[]
+  completions WorkoutCompletion[]
+
+  @@unique([gymId, id])
+  @@unique([planId, position])
+}
+
+model WorkoutExercise {
+  id          String   @id @default(cuid(2))
+  gymId       String
+  dayId       String
+  position    Int
+  name        String
+  sets        Int?
+  reps        String?
+  restSeconds Int?
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  gym Gym            @relation(fields: [gymId], references: [id])
+  day WorkoutPlanDay @relation(fields: [gymId, dayId], references: [gymId, id], onDelete: Cascade)
+
+  @@unique([dayId, position])
+  @@index([gymId])
+}
+
+/// A member marking a plan day as done. The optional note is encrypted.
+model WorkoutCompletion {
+  id          String   @id @default(cuid(2))
+  gymId       String
+  memberId    String
+  dayId       String
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  noteEnc     String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym            @relation(fields: [gymId], references: [id])
+  member Member         @relation(fields: [gymId, memberId], references: [gymId, id])
+  day    WorkoutPlanDay @relation(fields: [gymId, dayId], references: [gymId, id], onDelete: Cascade)
+
+  @@index([gymId, memberId, completedAt])
+  @@index([dayId, completedAt])
+}
+
+/// Weight and body measurements on a day. Every value is encrypted together as one JSON blob.
+model ProgressEntry {
+  id              String   @id @default(cuid(2))
+  gymId           String
+  memberId        String
+  recordedOn      DateTime @db.Date
+  measurementsEnc String
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@unique([memberId, recordedOn])
+  @@index([gymId, memberId, recordedOn])
+}
+
+/// A progress photo. Kept apart from FileAsset (which all staff can read): only the member and
+/// their assigned trainers may see these. The storage key never leaves the server.
+model ProgressPhoto {
+  id         String   @id @default(cuid(2))
+  gymId      String
+  memberId   String
+  takenOn    DateTime @db.Date
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  sha256     String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@index([gymId, memberId, takenOn])
+}
+
+/// A trainer's private note about a client: readable by its author and the gym's managers/owners.
+model TrainerClientNote {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  memberId  String
+  authorId  String
+  bodyEnc   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym         @relation(fields: [gymId], references: [id])
+  member Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  author StaffMember @relation(fields: [gymId, authorId], references: [gymId, id])
+
+  @@index([gymId, memberId, createdAt])
+}
+
+/// A personal training appointment between a trainer and a client.
+model TrainingSession {
+  id        String                @id @default(cuid(2))
+  gymId     String
+  trainerId String
+  memberId  String
+  startsAt  DateTime              @db.Timestamptz(3)
+  endsAt    DateTime              @db.Timestamptz(3)
+  status    TrainingSessionStatus @default(SCHEDULED)
+  focus     String?
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime              @updatedAt @db.Timestamptz(3)
+
+  gym     Gym         @relation(fields: [gymId], references: [id])
+  trainer StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
+  member  Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@index([gymId, trainerId, startsAt])
+  @@index([gymId, memberId, startsAt])
 }

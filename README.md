@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 4 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview). See [mobile/README.md](mobile/README.md).**
+> **Build status: all 8 web phases complete. Mobile app: Phase 5 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -434,6 +434,16 @@ curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessTo
 - **Covered:** check-in (QR scan, member number or name), dashboard, alerts, member search and profile, adding members, selling memberships, recording payments, and the class overview.
 - **Same rules as the web:** role permissions, plan limits and audit all apply. Writes are refused with `409 read_only` while a gym is read-only.
 - **Money by role:** front desk sees no revenue, and trainers see neither revenue nor overdue payments.
+
+**Trainer and fitness endpoints** (`/trainer/*`, `/member/workouts`, `/member/progress`, `/member/training-sessions`):
+- **Trainers:** their schedule (classes, personal training sessions, shifts), class attendance, clients, private notes, workout plans and templates, and PT bookings with no double-booking.
+- **Members:** their plans, marking workouts done, logging measurements, and progress photos.
+- **Who sees what** is enforced by row-level security:
+  - Trainers see their assigned clients only; managers and owners see everyone, except progress photos.
+  - Photos are visible to the member and their assigned trainers only.
+  - Trainer notes are visible to their author and managers, never the member.
+- **Encryption:** measurements, plan notes, workout notes and trainer notes are encrypted.
+- **Photos** are re-encoded on upload, which removes location and other metadata, and are served only through 5-minute signed links (`/api/mobile/v1/progress-photos/{id}`). Uploads are `multipart/form-data`.
 
 **Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
 

@@ -26,6 +26,8 @@ export type MobileHandlerArgs<E extends Endpoint> = {
   params: In<E["params"]>;
   query: In<E["query"]>;
   body: In<E["body"]>;
+  /** The uploaded file's bytes, for upload endpoints (type not yet checked — the service sniffs it). */
+  file: E["upload"] extends object ? Buffer : undefined;
 };
 
 const NO_STORE = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
@@ -74,7 +76,24 @@ export function mobileRoute<E extends Endpoint>(def: E, handler: (args: MobileHa
       const params = def.params ? parse(def.params, (await segment?.params) ?? {}, "path") : undefined;
       const query = def.query ? parse(def.query, Object.fromEntries(req.nextUrl.searchParams), "query") : undefined;
       let body: unknown;
-      if (def.body) {
+      let file: Buffer | undefined;
+      if (def.upload) {
+        const length = Number(req.headers.get("content-length") ?? 0);
+        if (length > def.upload.maxBytes + MAX_BODY_BYTES) throw new BadRequestError("The file is too large.", 413);
+        if (!req.headers.get("content-type")?.includes("multipart/form-data")) throw new BadRequestError("Send multipart/form-data.", 415);
+        let form: FormData;
+        try {
+          form = await req.formData();
+        } catch {
+          throw new BadRequestError("Malformed upload.");
+        }
+        const part = form.get(def.upload.field);
+        if (!part || typeof part === "string") throw new ValidationError("Choose a file to upload.", { [def.upload.field]: ["Choose a file to upload."] });
+        if (part.size > def.upload.maxBytes) throw new BadRequestError("The file is too large.", 413);
+        file = Buffer.from(await part.arrayBuffer());
+        const fields = Object.fromEntries([...form.entries()].filter(([k, v]) => k !== def.upload!.field && typeof v === "string"));
+        body = def.body ? parse(def.body, fields, "body") : undefined;
+      } else if (def.body) {
         const length = Number(req.headers.get("content-length") ?? 0);
         if (length > MAX_BODY_BYTES) throw new BadRequestError("Request too large.", 413);
         if (!req.headers.get("content-type")?.includes("application/json")) throw new BadRequestError("Send JSON (Content-Type: application/json).", 415);
@@ -89,7 +108,7 @@ export function mobileRoute<E extends Endpoint>(def: E, handler: (args: MobileHa
         body = parse(def.body, raw, "body");
       }
 
-      const result = await handler({ req, meta, auth: auth as AuthFor<E["auth"]>, params: params as In<E["params"]>, query: query as In<E["query"]>, body: body as In<E["body"]> });
+      const result = await handler({ req, meta, auth: auth as AuthFor<E["auth"]>, params: params as In<E["params"]>, query: query as In<E["query"]>, body: body as In<E["body"]>, file: file as MobileHandlerArgs<E>["file"] });
       // Responses go through the contract: unknown fields are stripped, wrong shapes are caught.
       const out = def.response.parse(result);
       return NextResponse.json(out, { status: def.status ?? 200, headers: NO_STORE });

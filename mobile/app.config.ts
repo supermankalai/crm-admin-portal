@@ -46,6 +46,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ["expo-secure-store", { configureAndroidBackup: true, faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
     // Camera for scanning members' QR codes at the front desk (no microphone, no recording).
     ["expo-camera", { cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan members' check-in QR codes.", microphonePermission: false, recordAudioAndroid: false }],
+    // Progress photos: from the camera or the photo library (no microphone; videos aren't allowed).
+    ["expo-image-picker", { photosPermission: "Allow $(PRODUCT_NAME) to choose progress photos from your library.", cameraPermission: "Allow $(PRODUCT_NAME) to take progress photos.", microphonePermission: false }],
     ["expo-local-authentication", { faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
     [
       "expo-build-properties",

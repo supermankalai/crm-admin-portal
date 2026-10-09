@@ -31,6 +31,13 @@ export class GymReadOnlyError extends AppError {
   }
 }
 
+/** The request clashes with the current state (double booking, already closed). */
+export class ConflictError extends AppError {
+  constructor(message: string) {
+    super(message, "conflict", 409);
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(
     message: string,

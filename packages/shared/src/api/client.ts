@@ -1,4 +1,4 @@
-import { api, MOBILE_API_BASE, type EndpointName, type RequestOf, type ResponseOf } from "./contract";
+import { api, MOBILE_API_BASE, type Endpoint, type EndpointName, type RequestOf, type ResponseOf, type UploadFile } from "./contract";
 import { apiErrorSchema } from "./schemas";
 
 /**
@@ -53,21 +53,32 @@ export function createApiClient(options: ClientOptions) {
   const doFetch: typeof fetch = (input, init) => (options.fetch ?? globalThis.fetch)(input, init);
 
   async function send<N extends EndpointName>(name: N, input: RequestOf<N>, retried: boolean): Promise<ResponseOf<N>> {
-    const def = api[name];
-    const req = input as { params?: Record<string, unknown>; query?: Record<string, unknown>; body?: unknown };
+    const def: Endpoint = api[name];
+    const req = input as { params?: Record<string, unknown>; query?: Record<string, unknown>; body?: unknown; file?: UploadFile };
     const url = `${options.baseUrl}${MOBILE_API_BASE}${buildPath(def.path, req.params)}${buildQuery(req.query)}`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (def.auth !== "none") {
       const token = await options.getAccessToken();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
-    if (req.body !== undefined) headers["Content-Type"] = "application/json";
+    let payload: BodyInit | undefined;
+    if (def.upload) {
+      // multipart: fetch sets the Content-Type with its boundary.
+      const form = new FormData();
+      for (const [k, v] of Object.entries((req.body ?? {}) as Record<string, unknown>)) if (v !== undefined && v !== null) form.append(k, String(v));
+      if (req.file) form.append(def.upload.field, req.file as Blob);
+      payload = form;
+    } else if (req.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      payload = JSON.stringify(req.body);
+    }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
+    // Uploads get longer on slow mobile networks.
+    const timer = setTimeout(() => controller.abort(), def.upload ? Math.max(options.timeoutMs ?? 0, 90_000) : (options.timeoutMs ?? 20_000));
     let res: Response;
     try {
-      res = await doFetch(url, { method: def.method, headers, body: req.body !== undefined ? JSON.stringify(req.body) : undefined, signal: controller.signal });
+      res = await doFetch(url, { method: def.method, headers, body: payload, signal: controller.signal });
     } catch {
       throw new NetworkError();
     } finally {

@@ -463,6 +463,8 @@ export const staffClassSchema = z.object({
 export const staffClassesResponseSchema = z.object({ from: dateOnly, to: dateOnly, classes: z.array(staffClassSchema) });
 
 export const staffClassDetailSchema = staffClassSchema.extend({
+  /** You teach it (or manage classes) and attendance is open (30 min before until a day after). */
+  canMarkAttendance: z.boolean(),
   bookings: z.array(
     z.object({
       bookingId: z.string(),
@@ -474,3 +476,133 @@ export const staffClassDetailSchema = staffClassSchema.extend({
     })
   ),
 });
+
+// ─────────────────────────────── Trainer & fitness ───────────────────────────────
+
+export const planIdParamsSchema = z.object({ planId: z.string().min(1).max(64) });
+export const dayIdParamsSchema = z.object({ dayId: z.string().min(1).max(64) });
+export const entryIdParamsSchema = z.object({ entryId: z.string().min(1).max(64) });
+export const photoIdParamsSchema = z.object({ photoId: z.string().min(1).max(64) });
+export const trainingSessionIdParamsSchema = z.object({ trainingSessionId: z.string().min(1).max(64) });
+
+const measurementsSchema = z.object({
+  weightKg: z.number().optional(),
+  bodyFatPct: z.number().optional(),
+  chestCm: z.number().optional(),
+  waistCm: z.number().optional(),
+  hipsCm: z.number().optional(),
+  armCm: z.number().optional(),
+  thighCm: z.number().optional(),
+});
+
+export const progressEntryItemSchema = z.object({ id: z.string(), recordedOn: dateOnly, values: measurementsSchema });
+/** A photo with a short-lived signed path (prefix it with the API host). */
+export const progressPhotoItemSchema = z.object({ id: z.string(), takenOn: dateOnly, url: z.string() });
+
+export const exerciseItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sets: z.number().int().nullable(),
+  reps: z.string().nullable(),
+  restSeconds: z.number().int().nullable(),
+  notes: z.string().nullable(),
+});
+
+export const planDayItemSchema = z.object({ id: z.string(), title: z.string(), exercises: z.array(exerciseItemSchema) });
+
+export const planStatusSchema = z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]);
+
+export const workoutPlanDetailSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  notes: z.string().nullable(),
+  status: planStatusSchema,
+  member: z.object({ id: z.string(), name: z.string() }).nullable(),
+  trainer: z.string(),
+  canEdit: z.boolean(),
+  updatedAt: isoDateTime,
+  days: z.array(planDayItemSchema),
+});
+
+export const workoutPlanRowSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: planStatusSchema,
+  member: z.object({ id: z.string(), name: z.string() }).nullable(),
+  dayCount: z.number().int(),
+  updatedAt: isoDateTime,
+});
+
+export const workoutPlansResponseSchema = z.object({ plans: z.array(workoutPlanRowSchema) });
+export const planSavedResponseSchema = z.object({ planId: z.string() });
+
+export const trainingSessionItemSchema = z.object({
+  id: z.string(),
+  startsAt: isoDateTime,
+  endsAt: isoDateTime,
+  status: z.enum(["SCHEDULED", "COMPLETED", "CANCELLED", "NO_SHOW"]),
+  focus: z.string().nullable(),
+  trainer: z.string(),
+  member: z.object({ id: z.string(), name: z.string() }),
+});
+
+export const scheduleItemSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("class"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, title: z.string(), color: z.string(), room: z.string(), booked: z.number().int(), capacity: z.number().int(), status: z.string() }),
+  z.object({ kind: z.literal("pt"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, member: z.object({ id: z.string(), name: z.string() }), focus: z.string().nullable(), status: z.string() }),
+  z.object({ kind: z.literal("shift"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, location: z.string() }),
+]);
+
+export const trainerScheduleResponseSchema = z.object({ from: dateOnly, to: dateOnly, items: z.array(scheduleItemSchema) });
+
+export const trainerClientRowSchema = z.object({
+  memberId: z.string(),
+  name: z.string(),
+  memberNumber: z.string(),
+  status: z.enum(["active", "frozen", "expired", "none"]),
+  lastVisit: isoDateTime.nullable(),
+  activePlan: z.string().nullable(),
+  nextSession: isoDateTime.nullable(),
+});
+
+export const trainerClientsResponseSchema = z.object({ clients: z.array(trainerClientRowSchema) });
+
+export const trainerNoteItemSchema = z.object({ id: z.string(), body: z.string(), author: z.string(), mine: z.boolean(), createdAt: isoDateTime });
+
+export const trainerClientDetailSchema = z.object({
+  member: z.object({ id: z.string(), name: z.string(), memberNumber: z.string(), phone: z.string().nullable(), joinedAt: isoDateTime }),
+  status: z.enum(["active", "frozen", "expired", "none"]),
+  membership: z.object({ planName: z.string(), endDate: dateOnly }).nullable(),
+  visits: z.object({ last30Days: z.number().int(), total: z.number().int(), lastVisit: isoDateTime.nullable() }),
+  plans: z.array(workoutPlanRowSchema),
+  completions: z.array(z.object({ id: z.string(), completedAt: isoDateTime, plan: z.string(), day: z.string(), note: z.string().nullable() })),
+  progress: z.array(progressEntryItemSchema),
+  /** Null when you aren't one of the member's assigned trainers (photos are private to them). */
+  photos: z.array(progressPhotoItemSchema).nullable(),
+  notes: z.array(trainerNoteItemSchema),
+  sessions: z.array(trainingSessionItemSchema),
+  isMyClient: z.boolean(),
+});
+
+export const memberWorkoutsResponseSchema = z.object({
+  plans: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      notes: z.string().nullable(),
+      trainer: z.string(),
+      days: z.array(planDayItemSchema.extend({ lastCompletedAt: isoDateTime.nullable(), timesCompleted: z.number().int() })),
+    })
+  ),
+  recent: z.array(z.object({ id: z.string(), completedAt: isoDateTime, plan: z.string(), day: z.string() })),
+  thisWeek: z.number().int(),
+});
+
+export const completeWorkoutResponseSchema = z.object({ completionId: z.string(), completedAt: isoDateTime });
+
+export const memberProgressResponseSchema = z.object({ entries: z.array(progressEntryItemSchema), photos: z.array(progressPhotoItemSchema) });
+export const progressSavedResponseSchema = z.object({ id: z.string(), recordedOn: dateOnly });
+export const photoUploadedResponseSchema = progressPhotoItemSchema;
+
+export const memberTrainingSessionsResponseSchema = z.object({ sessions: z.array(trainingSessionItemSchema) });
+export const trainingSessionCreatedResponseSchema = z.object({ id: z.string() });
+export const attendanceResponseSchema = z.object({ status: z.enum(["ATTENDED", "NO_SHOW"]) });

@@ -394,3 +394,36 @@ all followed by the usual gate (migrate, seed, typecheck, lint, tests, web build
 - **Owners and managers** reach Check-in from the dashboard. The route is allowed for their role but has no tab button (`EXTRA_ROUTES_BY_ROLE`).
 - **Offline.** The dashboard, alerts, member lists, profiles and class rosters are `sensitive` (memory only, because they hold names and money). Check-in locations, plans and the class timetable are cached.
 - **Shared package dependencies.** `@fitcrm/shared` declares `zod` and `@date-fns/tz` as peer dependencies. The mobile app installs both, and Metro pins imports from the shared folder to the app's own copies.
+
+## 14. Notes from mobile Phase 5
+
+- **New tables** (migration `trainer_fitness`): WorkoutPlan, WorkoutPlanDay, WorkoutExercise, WorkoutCompletion, ProgressEntry, ProgressPhoto, TrainerClientNote and TrainingSession. Each has RLS enabled and forced, the gym-change trigger, and composite gym foreign keys.
+- **Who sees what** is enforced in the database, through the helpers `app_current_staff_id()`, `app_is_manager_of_current_gym()` and `app_is_trainer_of(member)`:
+
+  | Data | Member | Assigned trainer | Manager / owner | Front desk / support access |
+  |---|---|---|---|---|
+  | Workout plans | own, ACTIVE only | read; author edits | all | none |
+  | Workouts done, measurements | own | read | read | none |
+  | Progress photos | own | read | **none** (decision 4) | none |
+  | Private trainer notes | **none** | author only | read | none |
+  | PT sessions | own | own (book with own clients) | all | read |
+
+  Days and exercises inherit their plan's visibility through RLS-filtered subqueries.
+- **Design change: progress photos are not FileAsset rows.** Every staff member can read FileAsset, which would break decision 4. Photos live in their own table, are re-encoded with `sharp` on upload, and are served by `/api/mobile/v1/progress-photos/{id}`:
+  - Re-encoding applies the camera rotation, caps the longest side at 1600 px, and drops EXIF, including GPS location.
+  - Links are signed separately from logo links, so neither can be replayed as the other.
+  - A trainer opening a client with photos is audited (`progress_photo.view`).
+  - The isolation matrix treats ProgressPhoto, like Notification, as a table the owner can't read in full, and asserts that the owner sees none.
+- **Encryption:** plan notes, workout notes, measurements (one JSON blob per day) and trainer notes are encrypted with record-bound AAD. Audit rows never contain them.
+- **Uploads:** `Endpoint.upload` marks a multipart endpoint. `mobileRoute` checks the size and content type and validates the other form fields with the contract's schema, and the shared client builds the FormData. The OpenAPI document describes these as `multipart/form-data`.
+- **Plans:** editing matches days by position, so members keep their workout history. Assigning copies a plan, usually a template, to a client. A second "done" tap within 10 minutes isn't counted twice.
+- **PT sessions:**
+  - Booking takes a per-trainer advisory lock, then refuses any overlap with the trainer's sessions or classes, or with the client's sessions (409 `conflict`).
+  - A session can be marked done or no-show only once it has started. Sessions are cancelled, never deleted (no DELETE grant).
+- **Trainer names for members:** `member_staff_names(ids)` (SECURITY DEFINER) returns names only, because members can't read staff rows.
+- **Permission** `workouts.manage`: trainers, managers and owners.
+- **App:**
+  - Measurements, photos, notes and client details are `sensitive` (memory only).
+  - Photo queries refetch every 4 minutes, before their links expire, and images use `cachePolicy="memory"`.
+  - Screenshots are blocked on photo and client screens.
+  - The progress chart is a single series (dataviz palette slot 1, validated on the app's light and dark surfaces). Press and drag shows each value; screen readers get a summary, and the list of entries serves as the table view.

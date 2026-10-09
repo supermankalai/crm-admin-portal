@@ -2,12 +2,13 @@
 
 This is the Expo app (SDK 57, React Native 0.86, TypeScript strict) for gym staff, trainers and members. It talks only to the FitCRM backend's mobile API (`/api/mobile/v1`), using the shared contract in [`../packages/shared`](../packages/shared). The design is in [docs/MOBILE_DESIGN.md](../docs/MOBILE_DESIGN.md).
 
-> **Status:** mobile Phase 4 of 7. Done so far:
+> **Status:** mobile Phase 5 of 7. Done so far:
 > - sign-in, biometric lock, gym switching, branding, and tabs by role;
-> - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, and payments and invoices;
-> - **front desk, owner and manager features**: QR check-in scanner, dashboard, member search and profiles, add member, sell memberships, record payments, alerts, and the class overview.
+> - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, payments and invoices, **workout plans, marking workouts done, measurements with a chart, and private progress photos**;
+> - **front desk, owner and manager features**: QR check-in scanner, dashboard, member search and profiles, add member, sell memberships, record payments, alerts, and the class overview;
+> - **trainer features**: schedule (classes, PT sessions, shifts), class attendance, clients with progress, photos and private notes, workout plans and templates, and PT session booking.
 >
-> The trainer, workout and progress tabs are placeholders until their phase.
+> Push notifications and announcements arrive in Phase 6.
 
 ## Running it
 
@@ -80,6 +81,18 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
   - **Alerts** lists expiring memberships, overdue invoices and full classes.
   - The front desk sees no revenue.
 - **Classes** (any staff): the next 7 days with booking numbers. Tap a class for its booking list and waitlist. Trainers see only their own classes.
+
+**Trainer and fitness features to try** (`trainer1@<gym domain>` coaches `member1@<gym domain>` in every seeded gym):
+- **Trainer** (`trainer1@irontemple.example`):
+  - **Schedule** lists your classes, PT sessions and shifts for the next 7 days. Tap a PT session to mark it done, a no-show, or cancelled.
+  - In a class you teach, mark each booking *Attended* or *No-show*. This is open from 30 minutes before the class until a day after.
+  - **Clients**: open `member1`'s profile to see their measurements chart, progress photos, workouts done, plans, PT sessions and your private notes. *Book PT* refuses times that clash with your classes or sessions. *New plan* writes a plan for that client.
+  - **Plans**: a template ("Beginner full body"). *Give to a client* copies it to a client as their active plan; *Edit* changes days and exercises.
+- **Member** (`member1@irontemple.example`):
+  - **Workouts**: your trainer's plan, day by day. *Mark as done*, optionally with a note your trainer can read. Upcoming PT sessions are shown at the top.
+  - **Progress**: *Log measurements* (weight, body fat, chest, waist, hips, arm, thigh). Tap an entry to edit or delete it. The chart switches between measurements; press and drag to read the values.
+  - **Photo**: take or choose a progress photo. Its location and other metadata are removed, and only you and your trainers can see it. Screenshots are blocked in the photo viewer.
+- **Owners and managers** can read any client's measurements and trainer notes through the API, but never their photos. Their screens for this come with the web portal additions in Phase 6.
 
 To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
 

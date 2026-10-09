@@ -12,6 +12,7 @@ import { recordPayment } from "./billing/payments";
 import { listInvoices } from "./billing/queries";
 import { sellMembership } from "./billing/sell";
 import { checkInMember, listCheckInLocations, lookupForCheckIn, todaysCheckIns } from "./checkin";
+import { canMarkAttendance } from "@/domain/classes";
 import { getSession, ownSessionsOnly } from "./classes/sessions";
 import { getDashboard } from "./dashboard";
 import { listMembershipPlans } from "./membership-plans";
@@ -264,6 +265,10 @@ export async function staffClass(ctx: TenantContext, sessionId: string) {
     capacity: s.capacity,
     booked: live.filter((b) => b.status !== "WAITLISTED").length,
     waitlisted: live.filter((b) => b.status === "WAITLISTED").length,
+    canMarkAttendance:
+      s.status !== "CANCELLED" &&
+      (ctx.permissions.has("classes.manage") || (ctx.permissions.has("classes.manageOwn") && s.trainerId === ctx.staffId)) &&
+      canMarkAttendance(s),
     bookings: s.bookings.map((b) => ({
       bookingId: b.id,
       memberId: b.member.id,

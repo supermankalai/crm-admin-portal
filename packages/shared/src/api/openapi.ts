@@ -17,6 +17,15 @@ const ERROR_RESPONSES = {
   "429": "Too many attempts (see Retry-After)",
 } as const;
 
+function multipartSchema(def: Endpoint) {
+  const fields = def.body ? (json(def.body, "input") as { properties?: Record<string, unknown>; required?: string[] }) : {};
+  return {
+    type: "object",
+    properties: { ...(fields.properties ?? {}), [def.upload!.field]: { type: "string", format: "binary", maxLength: def.upload!.maxBytes } },
+    required: [...(fields.required ?? []), def.upload!.field],
+  };
+}
+
 export function buildOpenApiDocument(serverUrl = "") {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const [operationId, def] of Object.entries(api) as [string, Endpoint][]) {
@@ -39,7 +48,11 @@ export function buildOpenApiDocument(serverUrl = "") {
       tags: [def.tag],
       security: def.auth === "none" ? [] : [{ bearerAuth: [] }],
       ...(parameters.length ? { parameters } : {}),
-      ...(def.body ? { requestBody: { required: true, content: { "application/json": { schema: json(def.body, "input") } } } } : {}),
+      ...(def.upload
+        ? { requestBody: { required: true, content: { "multipart/form-data": { schema: multipartSchema(def) } } } }
+        : def.body
+          ? { requestBody: { required: true, content: { "application/json": { schema: json(def.body, "input") } } } }
+          : {}),
       responses,
       "x-auth": def.auth,
     };

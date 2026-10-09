@@ -12,16 +12,17 @@ export const randomIp = () => `198.51.${randomInt(0, 255)}.${randomInt(1, 254)}`
 
 export async function callApi<T = Record<string, unknown>>(
   handler: Handler,
-  opts: { method?: string; body?: unknown; token?: string; params?: Record<string, string>; ip?: string; query?: Record<string, string>; rawBody?: string; contentType?: string } = {}
+  opts: { method?: string; body?: unknown; token?: string; params?: Record<string, string>; ip?: string; query?: Record<string, string>; rawBody?: string; contentType?: string; form?: FormData } = {}
 ): Promise<ApiReply<T>> {
   const headers = new Headers({ "x-forwarded-for": opts.ip ?? randomIp(), "user-agent": "vitest" });
+  // FormData bodies get their multipart Content-Type (with boundary) from the Request itself.
   if (opts.body !== undefined || opts.rawBody !== undefined) headers.set("content-type", opts.contentType ?? "application/json");
   if (opts.token) headers.set("authorization", `Bearer ${opts.token}`);
   const qs = opts.query ? `?${new URLSearchParams(opts.query)}` : "";
   const req = new NextRequest(`http://localhost/api/mobile/v1/test${qs}`, {
-    method: opts.method ?? (opts.body !== undefined || opts.rawBody !== undefined ? "POST" : "GET"),
+    method: opts.method ?? (opts.body !== undefined || opts.rawBody !== undefined || opts.form ? "POST" : "GET"),
     headers,
-    body: opts.rawBody ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
+    body: opts.form ?? opts.rawBody ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
   });
   const res = await handler(req, { params: Promise.resolve(opts.params ?? {}) });
   return { status: res.status, body: (await res.json()) as ApiReply<T>["body"], headers: res.headers };

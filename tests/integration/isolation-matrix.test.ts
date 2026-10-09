@@ -36,6 +36,13 @@ async function tryAsA(sql: string, ctx: Parameters<typeof asApp>[0] = ctxA()): P
 // that can't find the referenced row from inside the wrong gym.
 const REJECTED = /row-level security|permission denied|cannot be changed|append-only|plan_limit|payment_not_found/i;
 
+/**
+ * Tables where even the gym's owner deliberately can't read all of the gym's own rows:
+ * notifications are per recipient; progress photos are private to the member and their assigned
+ * trainers (mobile decision 4). Cross-gym isolation is still checked for them like every table.
+ */
+const NOT_ALL_VISIBLE_TO_OWNER = ["Notification", "ProgressPhoto"];
+
 /** Tables that carry a gymId but are platform-level, with their own (tested) policies. */
 const PLATFORM_TABLES = ["PlatformAuditLog", "GymSubscription", "SupportAccessSession"];
 
@@ -146,12 +153,19 @@ describe("gym A cannot touch gym B, table by table", () => {
         )
       );
       if (other > 0) leaks.push(`${t}: ${other}`);
-      if (t !== "Notification") {
+      if (!NOT_ALL_VISIBLE_TO_OWNER.includes(t)) {
         const [{ n }] = await getOwnerDb().$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(t)} WHERE "gymId" = $1`, A().id);
         expect(mine, `${t} own rows visible`).toBe(n);
       }
     }
     expect(leaks).toEqual([]);
+  });
+
+  it("progress photos stay hidden from the gym's own owner unless they're the member's trainer", async () => {
+    const [{ total }] = await getOwnerDb().$queryRawUnsafe<{ total: number }[]>(`SELECT count(*)::int AS total FROM ${q("ProgressPhoto")} WHERE "gymId" = $1`, A().id);
+    expect(total).toBeGreaterThan(0);
+    const [{ seen }] = await asApp(ctxA(), (tx) => tx.$queryRawUnsafe<{ seen: number }[]>(`SELECT count(*)::int AS seen FROM ${q("ProgressPhoto")}`));
+    expect(seen).toBe(0);
   });
 
   it("updates and deletes aimed at gym B affect nothing", async () => {
