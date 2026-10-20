@@ -62,7 +62,7 @@ export const api = {
 
   notificationPreferences: { method: "GET", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Which push alerts you get from this gym (the in-app list keeps everything)", response: s.preferencesResponseSchema },
   updateNotificationPreferences: { method: "PUT", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Turn push alert categories on or off for this gym", body: s.updatePreferencesSchema, response: s.preferencesResponseSchema },
-  registerPushToken: { method: "POST", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Register this device's Expo push token for the selected gym", body: s.pushTokenRequestSchema, response: s.okSchema },
+  registerPushToken: { method: "POST", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Register this device's push token (Expo, or Firebase on Android) for the selected gym", body: s.pushTokenRequestSchema, response: s.okSchema },
   removePushToken: { method: "DELETE", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Stop push alerts from this gym on this device", response: s.okSchema },
 
   // ── Notifications & announcements ──

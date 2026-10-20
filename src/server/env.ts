@@ -65,11 +65,14 @@ const envSchema = z
     TWILIO_ACCOUNT_SID: z.string().regex(/^AC[0-9a-f]{32}$/i, "must look like AC… (34 characters)").optional(),
     TWILIO_AUTH_TOKEN: z.string().min(16).optional(),
     TWILIO_FROM: z.string().min(3).optional(),
-    // Push notifications: `dev-outbox` writes each push to .dev-outbox/*.push.json; `expo` sends
-    // through Expo's push service. EXPO_ACCESS_TOKEN is needed only if the Expo project has
-    // "enhanced push security" turned on.
-    PUSH_PROVIDER: z.enum(["dev-outbox", "expo"]).default("dev-outbox"),
+    // Push notifications: `dev-outbox` writes each push to .dev-outbox/*.push.json; `live` sends
+    // them for real — Expo tokens through Expo's push service, Firebase (FCM) tokens straight to
+    // Firebase using FIREBASE_SERVICE_ACCOUNT_FILE (path to the service-account key, kept out of
+    // git). `expo` is the old name for `live`. EXPO_ACCESS_TOKEN is needed only if the Expo
+    // project has "enhanced push security" turned on.
+    PUSH_PROVIDER: z.enum(["dev-outbox", "live", "expo"]).default("dev-outbox"),
     EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
+    FIREBASE_SERVICE_ACCOUNT_FILE: z.string().min(1).optional(),
     LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
     // Per-IP ceilings (per 15 min for login, per hour for sign-up). Raise only behind a trusted
     // proxy that sets X-Forwarded-For, or for automated test runs.

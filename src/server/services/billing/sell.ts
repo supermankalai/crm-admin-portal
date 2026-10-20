@@ -1,7 +1,7 @@
 import "server-only";
 import { createId } from "@paralleldrive/cuid2";
 import { addDays, fromDateString, toDateString } from "@/domain/dates";
-import { applyPayment, priceMembershipSale, renewalStartDate } from "@/domain/billing";
+import { priceMembershipSale, renewalStartDate } from "@/domain/billing";
 import { membershipStateOn } from "@/domain/membership";
 import { recordAudit } from "@/server/audit/tenant-audit";
 import { NotFoundError, ValidationError } from "@/server/errors";
@@ -10,7 +10,7 @@ import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import type { SellMembershipInput } from "@/lib/validation/payments";
 import { todayFor, visibilityWhere } from "../members/shared";
-import { billingRule, nextInvoiceNumber } from "./shared";
+import { nextInvoiceNumber, payAtSale } from "./shared";
 
 /** Default start for a new sale: today, or the day after the member's current membership ends. */
 export async function suggestedStartDate(ctx: TenantContext, memberId: string) {
@@ -93,32 +93,7 @@ export async function sellMembership(ctx: TenantContext, input: SellMembershipIn
       select: { id: true },
     });
 
-    let paidMinor = 0;
-    if (input.payNow !== "none") {
-      const amount = input.payNow === "full" ? sale.totalMinor : input.amountMinor!;
-      const applied = billingRule(() => applyPayment({ totalMinor: sale.totalMinor, amountPaidMinor: 0, status: "OPEN", dueDate: sale.dueDate }, amount));
-      const payment = await tx.payment.create({
-        data: {
-          gymId: ctx.gym.id,
-          memberId: member.id,
-          invoiceId: invoice.id,
-          amountMinor: amount,
-          currency: ctx.gym.currency,
-          method: input.method,
-          reference: input.reference,
-          receivedAt: new Date(),
-          recordedById: staffId,
-        },
-        select: { id: true },
-      });
-      await tx.invoice.update({
-        where: { id: invoice.id },
-        data: { amountPaidMinor: applied.amountPaidMinor, status: applied.status, paidAt: applied.fullyPaid ? new Date() : null },
-        select: { id: true },
-      });
-      await recordAudit(tx, ctx, { action: "payment.record", entityType: "Payment", entityId: payment.id, changes: { amountMinor: amount, method: input.method, invoiceId: invoice.id } }, meta);
-      paidMinor = amount;
-    }
+    const paidMinor = await payAtSale(tx, ctx, staffId, { id: invoice.id, memberId: member.id, totalMinor: sale.totalMinor, dueDate: sale.dueDate }, input, meta);
 
     await recordAudit(tx, ctx, {
       action: "membership.sell",

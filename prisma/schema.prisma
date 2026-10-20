@@ -134,6 +134,13 @@ enum NotificationType {
   ANNOUNCEMENT
   CLASS_FULL
   DELETION_REQUEST
+  PT_ASSIGNED
+  PT_ENDED
+  PT_SESSION_BOOKED
+  PT_SESSION_CANCELLED
+  PT_SESSION_REMINDER
+  PT_CREDITS_LOW
+  PT_PACKAGE_EXPIRING
 }
 
 enum FileKind {
@@ -235,6 +242,8 @@ model Gym {
   memberCancelHours        Int       @default(2)
   /// Accept printed/static check-in codes as well as the member app's rotating QR code.
   acceptStaticCheckInCodes Boolean   @default(true)
+  /// PT module: booking a PT session needs a package credit (managers can still book complimentary ones).
+  ptCreditsRequired        Boolean   @default(false)
   createdAt                DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt                DateTime  @updatedAt @db.Timestamptz(3)
 
@@ -278,6 +287,9 @@ model Gym {
   notificationPrefs   NotificationPreference[]
   announcements       Announcement[]
   deletionRequests    AccountDeletionRequest[]
+  ptAssignmentHistory PtAssignmentHistory[]
+  ptPackages          PtPackage[]
+  ptPurchases         PtPackagePurchase[]
 }
 
 model GymSubscription {
@@ -388,7 +400,12 @@ model StaffMember {
 
   invitationsSent  StaffInvitation[]
   shifts           StaffShift[]
-  clients          TrainerClient[]
+  clients          TrainerClient[]          @relation("PtTrainer")
+  ptAssignedByMe   TrainerClient[]          @relation("PtAssignedBy")
+  ptHistory        PtAssignmentHistory[]
+  ptSessionsBooked TrainingSession[]        @relation("PtBookedBy")
+  ptPackagesSold   PtPackagePurchase[]      @relation("PtSoldBy")
+  ptPackagesLed    PtPackagePurchase[]      @relation("PtPurchaseTrainer")
   notesAuthored    MemberNote[]
   paymentsRecorded Payment[]
   refundsRecorded  Refund[]
@@ -398,7 +415,7 @@ model StaffMember {
   appInvitesSent   MemberAppInvite[]
   workoutPlans     WorkoutPlan[]
   clientNotes      TrainerClientNote[]
-  trainingSessions TrainingSession[]
+  trainingSessions TrainingSession[]        @relation("PtSessionTrainer")
   announcements    Announcement[]
   deletionsHandled AccountDeletionRequest[]
 
@@ -445,20 +462,62 @@ model StaffShift {
   @@index([staffId, startsAt])
 }
 
+/// A current personal-training assignment (PT module). Ending one moves it to PtAssignmentHistory,
+/// so this table only ever holds open assignments: app_is_trainer_of() reads it.
 model TrainerClient {
-  id        String   @id @default(cuid(2))
-  gymId     String
-  trainerId String
-  memberId  String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  id           String   @id @default(cuid(2))
+  gymId        String
+  trainerId    String
+  memberId     String
+  goal         PtGoal?
+  /// Encrypted JSON: target weight / body fat, target date and the goal note (health data).
+  targetsEnc   String?
+  startedOn    DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  assignedById String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  gym        Gym          @relation(fields: [gymId], references: [id])
+  trainer    StaffMember  @relation("PtTrainer", fields: [gymId, trainerId], references: [gymId, id])
+  member     Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  assignedBy StaffMember? @relation("PtAssignedBy", fields: [gymId, assignedById], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([trainerId, memberId])
+  @@index([gymId, memberId])
+}
+
+enum PtGoal {
+  WEIGHT_LOSS
+  MUSCLE_GAIN
+  STRENGTH
+  ENDURANCE
+  GENERAL_FITNESS
+  REHAB
+  SPORT
+}
+
+/// An ended personal-training assignment. Append-only; the targets stay encrypted.
+model PtAssignmentHistory {
+  id           String   @id @default(cuid(2))
+  gymId        String
+  trainerId    String
+  memberId     String
+  goal         PtGoal?
+  targetsEnc   String?
+  startedOn    DateTime @db.Date
+  assignedById String?
+  endedAt      DateTime @db.Timestamptz(3)
+  endedById    String
+  endReason    String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   gym     Gym         @relation(fields: [gymId], references: [id])
   trainer StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
   member  Member      @relation(fields: [gymId, memberId], references: [gymId, id])
 
-  @@unique([trainerId, memberId])
-  @@index([gymId, memberId])
+  @@index([gymId, memberId, endedAt])
+  @@index([gymId, trainerId, endedAt])
 }
 
 model Location {
@@ -577,6 +636,8 @@ model Member {
   trainerNotes       TrainerClientNote[]
   trainingSessions   TrainingSession[]
   deletionRequests   AccountDeletionRequest[]
+  ptHistory          PtAssignmentHistory[]
+  ptPurchases        PtPackagePurchase[]
 
   @@unique([gymId, id])
   @@unique([gymId, memberNumber])
@@ -666,10 +727,11 @@ model Invoice {
   createdAt       DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
 
-  gym        Gym         @relation(fields: [gymId], references: [id])
-  member     Member      @relation(fields: [gymId, memberId], references: [gymId, id])
-  membership Membership? @relation(fields: [gymId, membershipId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  gym        Gym                @relation(fields: [gymId], references: [id])
+  member     Member             @relation(fields: [gymId, memberId], references: [gymId, id])
+  membership Membership?        @relation(fields: [gymId, membershipId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
   payments   Payment[]
+  ptPurchase PtPackagePurchase?
 
   @@unique([gymId, id])
   @@unique([gymId, number])
@@ -1162,23 +1224,88 @@ model TrainerClientNote {
 
 /// A personal training appointment between a trainer and a client.
 model TrainingSession {
-  id        String                @id @default(cuid(2))
-  gymId     String
-  trainerId String
-  memberId  String
-  startsAt  DateTime              @db.Timestamptz(3)
-  endsAt    DateTime              @db.Timestamptz(3)
-  status    TrainingSessionStatus @default(SCHEDULED)
-  focus     String?
-  createdAt DateTime              @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime              @updatedAt @db.Timestamptz(3)
+  id            String                @id @default(cuid(2))
+  gymId         String
+  trainerId     String
+  memberId      String
+  startsAt      DateTime              @db.Timestamptz(3)
+  endsAt        DateTime              @db.Timestamptz(3)
+  status        TrainingSessionStatus @default(SCHEDULED)
+  focus         String?
+  /// Who booked it (the trainer, or a manager booking for them).
+  bookedById    String?
+  /// The package credit it uses (counted while booked, done or missed; released when cancelled).
+  purchaseId    String?
+  /// Booked by a manager without a credit, on the house.
+  complimentary Boolean               @default(false)
+  createdAt     DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
 
-  gym     Gym         @relation(fields: [gymId], references: [id])
-  trainer StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
-  member  Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  gym      Gym                @relation(fields: [gymId], references: [id])
+  trainer  StaffMember        @relation("PtSessionTrainer", fields: [gymId, trainerId], references: [gymId, id])
+  member   Member             @relation(fields: [gymId, memberId], references: [gymId, id])
+  bookedBy StaffMember?       @relation("PtBookedBy", fields: [gymId, bookedById], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  purchase PtPackagePurchase? @relation(fields: [gymId, purchaseId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([gymId, trainerId, startsAt])
   @@index([gymId, memberId, startsAt])
+  @@index([purchaseId, status])
+}
+
+/// A personal training package the gym sells, e.g. "10 sessions, valid 90 days".
+model PtPackage {
+  id           String    @id @default(cuid(2))
+  gymId        String
+  name         String
+  description  String?
+  sessionCount Int
+  priceMinor   Int
+  validityDays Int
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym       Gym                 @relation(fields: [gymId], references: [id])
+  purchases PtPackagePurchase[]
+
+  @@unique([gymId, id])
+  @@index([gymId, isActive])
+}
+
+/// A package sold to a member, paid through its invoice. Credits left = sessions minus the PT
+/// sessions using it that are booked, done or missed (cancelled ones give the credit back).
+model PtPackagePurchase {
+  id            String    @id @default(cuid(2))
+  gymId         String
+  memberId      String
+  packageId     String
+  /// Optional: the package is for sessions with this trainer only.
+  trainerId     String?
+  /// Snapshot of the package at the time of sale.
+  name          String
+  sessionsTotal Int
+  priceMinor    Int
+  startsOn      DateTime  @db.Date
+  expiresOn     DateTime  @db.Date
+  invoiceId     String
+  soldById      String
+  cancelledAt   DateTime? @db.Timestamptz(3)
+  cancelReason  String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym      Gym               @relation(fields: [gymId], references: [id])
+  member   Member            @relation(fields: [gymId, memberId], references: [gymId, id])
+  package  PtPackage         @relation(fields: [gymId, packageId], references: [gymId, id])
+  trainer  StaffMember?      @relation("PtPurchaseTrainer", fields: [gymId, trainerId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  invoice  Invoice           @relation(fields: [gymId, invoiceId], references: [gymId, id])
+  soldBy   StaffMember       @relation("PtSoldBy", fields: [gymId, soldById], references: [gymId, id])
+  sessions TrainingSession[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, invoiceId])
+  @@index([gymId, memberId, expiresOn])
 }
 
 // ─────────────────────────── Push, announcements, account deletion (mobile Phase 6) ───────────────────────────
@@ -1195,8 +1322,8 @@ enum DeletionRequestStatus {
   REJECTED
 }
 
-/// An Expo push token for one signed-in device in one gym. Removed on logout; marked invalid
-/// when Expo reports the device is no longer registered.
+/// A push token for one signed-in device in one gym (Expo or Firebase, see provider). Removed on
+/// logout; marked invalid when the push service reports the device is no longer registered.
 model PushToken {
   id              String    @id @default(cuid(2))
   gymId           String
@@ -1204,6 +1331,9 @@ model PushToken {
   deviceSessionId String
   token           String
   platform        String
+  /// How the device is reached: "expo" (Expo push service, Expo token) or "fcm" (Firebase Cloud
+  /// Messaging directly, the device's native FCM token).
+  provider        String    @default("expo")
   invalidatedAt   DateTime? @db.Timestamptz(3)
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -1229,6 +1359,7 @@ model NotificationPreference {
   payments       Boolean  @default(true)
   announcements  Boolean  @default(true)
   staffAlerts    Boolean  @default(true)
+  training       Boolean  @default(true)
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 

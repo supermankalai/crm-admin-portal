@@ -1,6 +1,7 @@
 import "server-only";
 import { DEFAULT_PREFERENCES, preferenceFor, pushText, type NotificationKind, type Preferences, type Recipient } from "@/domain/notifications";
 import type { OwnerClient as DbClient } from "@/server/db/owner";
+import { FCM_PUSH_TOKEN } from "@fitcrm/shared/api/schemas";
 import { EXPO_TOKEN, RECEIPT_BATCH, SEND_BATCH, type PushMessage, type PushProvider } from "./provider";
 
 /**
@@ -12,8 +13,11 @@ import { EXPO_TOKEN, RECEIPT_BATCH, SEND_BATCH, type PushMessage, type PushProvi
  * lock-screen text (domain pushText — never names, amounts or other personal details). Every
  * notification is then marked handled, so nothing is pushed twice. Old unsent ones are skipped.
  *
- * checkPushReceipts(): Expo reports per-device delivery a while later. A device that's no longer
- * registered (app removed, token rotated) gets its token invalidated, so we stop sending to it.
+ * Each device is reached through its own service (Expo or Firebase, PushToken.provider).
+ *
+ * checkPushReceipts(): Expo reports per-device delivery a while later (Firebase answers at once).
+ * A device that's no longer registered (app removed, token rotated) gets its token invalidated,
+ * so we stop sending to it.
  */
 
 /** Notifications older than this when the job sees them are not pushed (stale news). */
@@ -48,7 +52,7 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
     db.pushToken.findMany({
       // A device that hasn't refreshed in 30 days can't be signed in any more (refresh tokens expire).
       where: { gymId: { in: gymIds }, userId: { in: userIds }, invalidatedAt: null, deviceSession: { revokedAt: null, lastSeenAt: { gte: new Date(now.getTime() - DEVICE_IDLE_MS) } } },
-      select: { id: true, gymId: true, userId: true, token: true, updatedAt: true },
+      select: { id: true, gymId: true, userId: true, token: true, provider: true, updatedAt: true },
     }),
     db.announcement.findMany({ where: { id: { in: pending.filter((n) => n.type === "ANNOUNCEMENT" && n.entityId).map((n) => n.entityId!) } }, select: { id: true, title: true } }),
   ]);
@@ -73,7 +77,7 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
     const gym = gymById.get(n.gymId);
     const k = key(n.gymId, n.recipientUserId);
     const recipient: Recipient | null = staffSet.has(k) ? "staff" : memberSet.has(k) ? "member" : null;
-    const devices = (tokensBy.get(k) ?? []).filter((t) => EXPO_TOKEN.test(t.token));
+    const devices = (tokensBy.get(k) ?? []).filter((t) => (t.provider === "fcm" ? FCM_PUSH_TOKEN : EXPO_TOKEN).test(t.token));
     const prefs = prefBy.get(k) ?? DEFAULT_PREFERENCES;
     const plan = gym?.subscription?.plan;
     const appInPlan = recipient === "staff" ? plan?.featureMobileApp : plan?.featureMemberApp;
@@ -83,7 +87,8 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
     }
     const text = pushText(n.type, recipient, gym.name, n.entityId ? titleBy.get(n.entityId) : undefined);
     for (const d of devices) {
-      outgoing.push({ notificationId: n.id, pushTokenId: d.id, message: { to: d.token, ...text, data: { notificationId: n.id, type: n.type, gymSlug: gym.slug } } });
+      const provider = d.provider === "fcm" ? ("fcm" as const) : ("expo" as const);
+      outgoing.push({ notificationId: n.id, pushTokenId: d.id, message: { to: d.token, provider, ...text, data: { notificationId: n.id, type: n.type, gymSlug: gym.slug } } });
     }
   }
 

@@ -177,6 +177,6 @@ export function hourLabel(hour: number): string {
   return `${h}${hour < 12 ? "am" : "pm"}`;
 }
 
-export const REPORT_KINDS = ["revenue", "attendance", "retention", "classes"] as const;
+export const REPORT_KINDS = ["revenue", "attendance", "retention", "classes", "trainers"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
-export const REPORT_LABELS: Record<ReportKind, string> = { revenue: "Revenue", attendance: "Attendance", retention: "Retention & churn", classes: "Class popularity" };
+export const REPORT_LABELS: Record<ReportKind, string> = { revenue: "Revenue", attendance: "Attendance", retention: "Retention & churn", classes: "Class popularity", trainers: "Trainers" };

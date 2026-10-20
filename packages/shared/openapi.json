@@ -5625,6 +5625,9 @@
                         },
                         "staffAlerts": {
                           "type": "boolean"
+                        },
+                        "training": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -5633,7 +5636,8 @@
                         "membership",
                         "payments",
                         "announcements",
-                        "staffAlerts"
+                        "staffAlerts",
+                        "training"
                       ],
                       "additionalProperties": false
                     },
@@ -5647,7 +5651,8 @@
                           "membership",
                           "payments",
                           "announcements",
-                          "staffAlerts"
+                          "staffAlerts",
+                          "training"
                         ]
                       }
                     }
@@ -6060,6 +6065,9 @@
                   },
                   "staffAlerts": {
                     "type": "boolean"
+                  },
+                  "training": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -6095,6 +6103,9 @@
                         },
                         "staffAlerts": {
                           "type": "boolean"
+                        },
+                        "training": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -6103,7 +6114,8 @@
                         "membership",
                         "payments",
                         "announcements",
-                        "staffAlerts"
+                        "staffAlerts",
+                        "training"
                       ],
                       "additionalProperties": false
                     },
@@ -6117,7 +6129,8 @@
                           "membership",
                           "payments",
                           "announcements",
-                          "staffAlerts"
+                          "staffAlerts",
+                          "training"
                         ]
                       }
                     }
@@ -6498,7 +6511,7 @@
     "/api/mobile/v1/me/push-token": {
       "post": {
         "operationId": "registerPushToken",
-        "summary": "Register this device's Expo push token for the selected gym",
+        "summary": "Register this device's push token (Expo, or Firebase on Android) for the selected gym",
         "tags": [
           "Me"
         ],
@@ -6517,13 +6530,21 @@
                 "properties": {
                   "token": {
                     "type": "string",
-                    "pattern": "^Expo(nent)?PushToken\\[[A-Za-z0-9_-]{10,}\\]$"
+                    "maxLength": 4096
                   },
                   "platform": {
                     "type": "string",
                     "enum": [
                       "ios",
                       "android"
+                    ]
+                  },
+                  "provider": {
+                    "default": "expo",
+                    "type": "string",
+                    "enum": [
+                      "expo",
+                      "fcm"
                     ]
                   }
                 },
@@ -7383,7 +7404,14 @@
                               "PAYMENT_DUE",
                               "ANNOUNCEMENT",
                               "CLASS_FULL",
-                              "DELETION_REQUEST"
+                              "DELETION_REQUEST",
+                              "PT_ASSIGNED",
+                              "PT_ENDED",
+                              "PT_SESSION_BOOKED",
+                              "PT_SESSION_CANCELLED",
+                              "PT_SESSION_REMINDER",
+                              "PT_CREDITS_LOW",
+                              "PT_PACKAGE_EXPIRING"
                             ]
                           },
                           "title": {

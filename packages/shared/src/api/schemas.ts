@@ -631,6 +631,13 @@ export const notificationTypeSchema = z.enum([
   "ANNOUNCEMENT",
   "CLASS_FULL",
   "DELETION_REQUEST",
+  "PT_ASSIGNED",
+  "PT_ENDED",
+  "PT_SESSION_BOOKED",
+  "PT_SESSION_CANCELLED",
+  "PT_SESSION_REMINDER",
+  "PT_CREDITS_LOW",
+  "PT_PACKAGE_EXPIRING",
 ]);
 
 export const notificationIdParamsSchema = z.object({ notificationId: z.string().min(1).max(64) });
@@ -656,14 +663,26 @@ export const preferencesSchema = z.object({
   payments: z.boolean(),
   announcements: z.boolean(),
   staffAlerts: z.boolean(),
+  training: z.boolean(),
 });
 export const preferencesResponseSchema = z.object({ preferences: preferencesSchema, available: z.array(preferencesSchema.keyof()) });
 export const updatePreferencesSchema = preferencesSchema.partial();
 
-export const pushTokenRequestSchema = z.object({
-  token: z.string().regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/, "Not an Expo push token"),
-  platform: z.enum(["ios", "android"]),
-});
+/** Expo tokens look like ExponentPushToken[…]; native FCM registration tokens are long URL-safe strings. */
+export const EXPO_PUSH_TOKEN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/;
+export const FCM_PUSH_TOKEN = /^[A-Za-z0-9_:-]{100,4096}$/;
+
+export const pushTokenRequestSchema = z
+  .object({
+    token: z.string().max(4096),
+    platform: z.enum(["ios", "android"]),
+    /** expo (default): Expo's push service. fcm: Firebase Cloud Messaging directly (Android builds with Firebase). */
+    provider: z.enum(["expo", "fcm"]).default("expo"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.provider === "expo" && !EXPO_PUSH_TOKEN.test(v.token)) ctx.addIssue({ code: "custom", path: ["token"], message: "Not an Expo push token" });
+    if (v.provider === "fcm" && (!FCM_PUSH_TOKEN.test(v.token) || v.platform !== "android")) ctx.addIssue({ code: "custom", path: ["token"], message: "Not an Android FCM token" });
+  });
 
 export const announcementItemSchema = z.object({
   id: z.string(),

@@ -23,6 +23,7 @@ import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import { todayFor } from "./members/shared";
+import { trainerReport } from "./pt/report";
 
 /**
  * Gym reports. Every figure is computed by PostgreSQL in the gym's RLS context and the gym's
@@ -268,11 +269,12 @@ export async function exportReport(ctx: TenantContext, kind: ReportKind, range: 
     const ledger = await inTenant(ctx, (tx) =>
       tx.$queryRawUnsafe<{ receivedAt: Date; invoiceNumber: number | null; memberNumber: number; firstName: string; lastName: string; method: string; amount: number; refunded: number; status: string; plan: string | null }[]>(
         `SELECT p."receivedAt", i.number AS "invoiceNumber", m."memberNumber", m."firstName", m."lastName", p.method, p."amountMinor" AS amount,
-                coalesce((SELECT sum(r."amountMinor") FROM "Refund" r WHERE r."paymentId" = p.id), 0)::int AS refunded, p.status, pl.name AS plan
+                coalesce((SELECT sum(r."amountMinor") FROM "Refund" r WHERE r."paymentId" = p.id), 0)::int AS refunded, p.status, coalesce(pl.name, 'PT: ' || pp.name) AS plan
            FROM "Payment" p JOIN "Member" m ON m.id = p."memberId"
            LEFT JOIN "Invoice" i ON i.id = p."invoiceId"
            LEFT JOIN "Membership" ms ON ms.id = i."membershipId"
            LEFT JOIN "MembershipPlan" pl ON pl.id = ms."planId"
+           LEFT JOIN "PtPackagePurchase" pp ON pp."invoiceId" = i.id
           WHERE p."deletedAt" IS NULL AND p.status <> 'VOID' AND p."receivedAt" >= $1 AND p."receivedAt" < $2
           ORDER BY p."receivedAt"`,
         start,
@@ -300,6 +302,10 @@ export async function exportReport(ctx: TenantContext, kind: ReportKind, range: 
     const r = await retentionReport(ctx, range);
     headers = ["Month", "Active at start", "Retained", "Churned", "New or returning", "Active at end", "Retention %", "Churn %"];
     rows = r.series.map((m) => [m.month.slice(0, 7), m.activeAtStart, m.retained, m.churned, m.gained, m.activeAtEnd, m.retentionRate, m.churnRate]);
+  } else if (kind === "trainers") {
+    const r = await trainerReport(ctx, range);
+    headers = ["Trainer", "Still at the gym", "Clients now", "New clients", "Clients ended", "Sessions done", "No-shows", "Cancelled", "Still to close", "No-show %", "Packages sold", `Package sales (${ctx.gym.currency})`];
+    rows = r.rows.map((t) => [t.name, t.active ? "Yes" : "No", t.clients, t.newClients, t.endedClients, t.completed, t.noShows, t.cancelled, t.booked, t.noShowRate, t.packagesSold, csvMoney(t.packageRevenueMinor)]);
   } else {
     const r = await classReport(ctx, range);
     headers = ["Class", "Sessions", "Cancelled", "Capacity", "Booked", "Fill %", "Waitlisted", "Full sessions", "Attended", "No-shows", "Attendance %"];

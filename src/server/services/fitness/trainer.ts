@@ -3,8 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { addDays, dayBounds, isDateString, toDateString } from "@/domain/dates";
 import { recordAudit } from "@/server/audit/tenant-audit";
 import { encryptField, tryDecrypt } from "@/server/crypto";
-import type { Tx } from "@/server/db/context";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import type { RequestMeta } from "@/server/security/request-meta";
 import { assertWritable, inTenant } from "@/server/tenant/guards";
 import { inMember, type MemberContext } from "@/server/tenant/member";
@@ -14,7 +13,8 @@ import { getMemberProfile } from "../members/profile";
 import { todayFor } from "../members/shared";
 import { formatMemberNumber } from "@/domain/member-search";
 import { memberStatusOn } from "@/domain/membership";
-import { assertCanCoach, coach, fullName, isTrainerOf, type Coach } from "./common";
+import { assertCanCoach, coach, fullName, isTrainerOf } from "./common";
+import { bookSession, closeSession } from "../pt/sessions";
 import { readEntries, readPhotos } from "./progress";
 import { completionNote, planRow, planRowsFor, staffNamesForMember } from "./workouts";
 
@@ -193,49 +193,13 @@ function sessionItem(s: SessionRow, trainer: string) {
   return { id: s.id, startsAt: s.startsAt.toISOString(), endsAt: s.endsAt.toISOString(), status: s.status, focus: s.focus, trainer, member: { id: s.member.id, name: fullName(s.member) } };
 }
 
-async function lockTrainer(tx: Tx, staffId: string) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"pt-trainer:" + staffId}))`;
+/** Booking and closing live in the PT module (alerts, manager booking); the trainer app uses them too. */
+export function createTrainingSession(ctx: TenantContext, input: { memberId: string; startsAt: string; durationMinutes: number; focus: string | null }, meta: RequestMeta) {
+  return bookSession(ctx, { memberId: input.memberId, startsAt: new Date(input.startsAt), durationMinutes: input.durationMinutes, focus: input.focus }, meta);
 }
 
-/** No overlap with the trainer's other PT sessions or classes, or the client's other PT sessions. */
-async function assertFree(tx: Tx, c: Coach, memberId: string, startsAt: Date, endsAt: Date) {
-  const overlap = { startsAt: { lt: endsAt }, endsAt: { gt: startsAt } };
-  const pt = await tx.trainingSession.findFirst({ where: { status: "SCHEDULED", ...overlap, OR: [{ trainerId: c.staffId }, { memberId }] }, select: { trainerId: true } });
-  if (pt) throw new ConflictError(pt.trainerId === c.staffId ? "You already have a session at that time." : "This client already has a session at that time.");
-  const cls = await tx.classSession.findFirst({ where: { trainerId: c.staffId, status: "SCHEDULED", ...overlap }, select: { id: true } });
-  if (cls) throw new ConflictError("You're teaching a class at that time.");
-}
-
-export async function createTrainingSession(ctx: TenantContext, input: { memberId: string; startsAt: string; durationMinutes: number; focus: string | null }, meta: RequestMeta) {
-  const c = coach(ctx);
-  assertWritable(ctx);
-  const startsAt = new Date(input.startsAt);
-  const endsAt = new Date(startsAt.getTime() + input.durationMinutes * 60_000);
-  if (startsAt.getTime() < Date.now() - 5 * 60_000) throw new ValidationError("Choose a time in the future.", { startsAt: ["Choose a time in the future."] });
-  if (startsAt.getTime() > Date.now() + 180 * 86_400_000) throw new ValidationError("Sessions can be booked up to 6 months ahead.", { startsAt: ["Up to 6 months ahead."] });
-  return inTenant(ctx, async (tx) => {
-    await assertCanCoach(tx, c, input.memberId);
-    await lockTrainer(tx, c.staffId);
-    await assertFree(tx, c, input.memberId, startsAt, endsAt);
-    const row = await tx.trainingSession.create({ data: { gymId: ctx.gym.id, trainerId: c.staffId, memberId: input.memberId, startsAt, endsAt, focus: input.focus }, select: { id: true } });
-    await recordAudit(tx, ctx, { action: "training_session.create", entityType: "TrainingSession", entityId: row.id, changes: { memberId: input.memberId, startsAt: startsAt.toISOString(), minutes: input.durationMinutes } }, meta);
-    return { id: row.id };
-  });
-}
-
-export async function updateTrainingSession(ctx: TenantContext, id: string, status: "COMPLETED" | "CANCELLED" | "NO_SHOW", meta: RequestMeta) {
-  const c = coach(ctx);
-  assertWritable(ctx);
-  return inTenant(ctx, async (tx) => {
-    const s = await tx.trainingSession.findFirst({ where: { id }, select: { id: true, trainerId: true, status: true, startsAt: true } });
-    if (!s) throw new NotFoundError("Session not found.");
-    if (!c.isManager && s.trainerId !== c.staffId) throw new ForbiddenError("You can only change your own sessions.");
-    if (s.status !== "SCHEDULED") throw new ConflictError("This session has already been closed.");
-    if (status !== "CANCELLED" && s.startsAt.getTime() > Date.now()) throw new ValidationError("A session can be marked done or missed once it has started.");
-    await tx.trainingSession.update({ where: { id }, data: { status }, select: { id: true } });
-    await recordAudit(tx, ctx, { action: "training_session.update", entityType: "TrainingSession", entityId: id, changes: { status } }, meta);
-    return { ok: true as const };
-  });
+export function updateTrainingSession(ctx: TenantContext, id: string, status: "COMPLETED" | "CANCELLED" | "NO_SHOW", meta: RequestMeta) {
+  return closeSession(ctx, id, status, meta);
 }
 
 /** The member's upcoming PT sessions (RLS: their own only). */

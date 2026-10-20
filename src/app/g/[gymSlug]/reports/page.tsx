@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { hasFeature, planLimitsOf } from "@/server/plan/limits";
 import { todayFor } from "@/server/services/members/shared";
 import { attendanceReport, classReport, describeRange, rangePresets, retentionReport, revenueReport } from "@/server/services/reports";
+import { trainerReport } from "@/server/services/pt/report";
 import { hasPermission, requireGymAccess, type TenantContext } from "@/server/tenant";
 
 export const metadata: Metadata = { title: "Reports" };
@@ -109,6 +110,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         {tab === "attendance" && <Attendance ctx={ctx} range={range} />}
         {tab === "retention" && <Retention ctx={ctx} range={range} />}
         {tab === "classes" && <Classes ctx={ctx} range={range} />}
+        {tab === "trainers" && <Trainers ctx={ctx} range={range} />}
       </div>
     </>
   );
@@ -366,6 +368,72 @@ async function Classes({ ctx, range }: { ctx: TenantContext; range: DateRange })
             ))}
           </TableBody>
         </Table>
+      </Card>
+    </div>
+  );
+}
+
+async function Trainers({ ctx, range }: { ctx: TenantContext; range: DateRange }) {
+  const r = await trainerReport(ctx, range);
+  if (r.rows.length === 0) return <EmptyState title="No trainers" description="Invite staff with the Trainer role to see personal training here." />;
+  const money = (v: number) => formatMoney(v, ctx.gym.currency);
+  const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
+  const t = r.totals;
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="PT clients now" value={t.clients} hint="Open trainer assignments" />
+        <StatTile label="PT sessions done" value={t.completed} hint={`${t.noShows} no-show${t.noShows === 1 ? "" : "s"} · ${t.cancelled} cancelled`} />
+        <StatTile label="No-show rate" value={pct(t.noShowRate)} hint="Of sessions that were due to happen" />
+        <StatTile label="PT package sales" value={money(t.packageRevenueMinor)} hint={`${t.packagesSold} package${t.packagesSold === 1 ? "" : "s"} invoiced${t.anyTrainerPackages ? ` (${t.anyTrainerPackages} for any trainer)` : ""}`} />
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>PT sessions done by trainer</CardTitle>
+          <CardDescription>Personal training sessions marked done in this period.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BarChart data={r.rows.map((x) => ({ label: x.name, value: x.completed }))} valueLabel="sessions done" layout="vertical" height={Math.max(160, r.rows.length * 40)} />
+        </CardContent>
+      </Card>
+      <Card className="gap-0 pb-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Trainer</TableHead>
+                <TableHead className="text-right">Clients now</TableHead>
+                <TableHead className="text-right">New</TableHead>
+                <TableHead className="text-right">Ended</TableHead>
+                <TableHead className="text-right">Done</TableHead>
+                <TableHead className="text-right">No-shows</TableHead>
+                <TableHead className="text-right">No-show rate</TableHead>
+                <TableHead className="text-right">Cancelled</TableHead>
+                <TableHead className="text-right">Packages</TableHead>
+                <TableHead className="text-right">Package sales</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {r.rows.map((x) => (
+                <TableRow key={x.id}>
+                  <TableCell>
+                    {x.name}
+                    {!x.active && <span className="ml-2 text-xs text-muted-foreground">(left)</span>}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{x.clients}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.newClients}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.endedClients}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.completed}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.noShows}</TableCell>
+                  <TableCell className="text-right tabular-nums">{pct(x.noShowRate)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.cancelled}</TableCell>
+                  <TableCell className="text-right tabular-nums">{x.packagesSold}</TableCell>
+                  <TableCell className="text-right tabular-nums">{money(x.packageRevenueMinor)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
     </div>
   );

@@ -16,7 +16,8 @@ export type NavIcon =
   | "audit"
   | "billing"
   | "announcements"
-  | "workouts";
+  | "workouts"
+  | "pt";
 
 export type NavItem = { label: string; path: string; icon: NavIcon; permission: Permission };
 
@@ -33,6 +34,7 @@ export const GYM_NAV: NavItem[] = [
   { label: "Membership plans", path: "plans", icon: "plans", permission: "plans.view" },
   { label: "Staff", path: "staff", icon: "staff", permission: "staff.view" },
   { label: "My schedule", path: "schedule", icon: "schedule", permission: "schedule.view" },
+  { label: "Personal training", path: "pt", icon: "pt", permission: "workouts.manage" },
   { label: "Workout plans", path: "workouts", icon: "workouts", permission: "workouts.manage" },
   { label: "Announcements", path: "announcements", icon: "announcements", permission: "announcements.manage" },
   { label: "Reports", path: "reports", icon: "reports", permission: "reports.view" },

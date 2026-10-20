@@ -19,3 +19,7 @@ npm-debug.log*
 /test-results/
 /playwright-report/
 /coverage/
+
+# Firebase: the server's service-account key is a secret. Keep it out of git (point FIREBASE_SERVICE_ACCOUNT_FILE at it).
+firebase/*adminsdk*.json
+firebase/service-account*.json

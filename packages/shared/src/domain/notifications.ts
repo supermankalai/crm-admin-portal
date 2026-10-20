@@ -16,7 +16,17 @@ export type NotificationKind =
   | "PAYMENT_DUE"
   | "ANNOUNCEMENT"
   | "CLASS_FULL"
-  | "DELETION_REQUEST";
+  | "DELETION_REQUEST"
+  | "PT_ASSIGNED"
+  | "PT_ENDED"
+  | "PT_SESSION_BOOKED"
+  | "PT_SESSION_CANCELLED"
+  | "PT_SESSION_REMINDER"
+  | "PT_CREDITS_LOW"
+  | "PT_PACKAGE_EXPIRING";
+
+/** Personal training alerts: sent to the member and their trainer (switched by "training"). */
+export const PT_KINDS: readonly NotificationKind[] = ["PT_ASSIGNED", "PT_ENDED", "PT_SESSION_BOOKED", "PT_SESSION_CANCELLED", "PT_SESSION_REMINDER", "PT_CREDITS_LOW", "PT_PACKAGE_EXPIRING"];
 
 /** Alerts sent to staff by role (the rest go to a specific member, or everyone for announcements). */
 export type StaffAlertKind = "MEMBERSHIP_EXPIRING" | "PAYMENT_OVERDUE" | "PLAN_LIMIT_NEAR" | "SUBSCRIPTION_EXPIRING" | "CLASS_FULL";
@@ -107,10 +117,10 @@ export function paymentDueText(invoiceNumber: string, dueOn: string, overdue: bo
 
 // ─────────────────────────────── Preferences and push ───────────────────────────────
 
-export const PREFERENCE_KEYS = ["classReminders", "waitlist", "membership", "payments", "announcements", "staffAlerts"] as const;
+export const PREFERENCE_KEYS = ["classReminders", "waitlist", "membership", "payments", "announcements", "staffAlerts", "training"] as const;
 export type PreferenceKey = (typeof PREFERENCE_KEYS)[number];
 export type Preferences = Record<PreferenceKey, boolean>;
-export const DEFAULT_PREFERENCES: Preferences = { classReminders: true, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true };
+export const DEFAULT_PREFERENCES: Preferences = { classReminders: true, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true, training: true };
 
 export const PREFERENCE_LABELS: Record<PreferenceKey, { label: string; description: string; for: "member" | "staff" | "both" }> = {
   classReminders: { label: "Class reminders", description: "Before a class you booked", for: "member" },
@@ -119,6 +129,7 @@ export const PREFERENCE_LABELS: Record<PreferenceKey, { label: string; descripti
   payments: { label: "Payments", description: "When a payment is due or overdue", for: "member" },
   announcements: { label: "Announcements", description: "News from your gym", for: "both" },
   staffAlerts: { label: "Gym alerts", description: "Expiring memberships, overdue payments, full classes", for: "staff" },
+  training: { label: "Personal training", description: "Your trainer, PT sessions and reminders, package credits", for: "both" },
 };
 
 export type Recipient = "member" | "staff";
@@ -126,6 +137,7 @@ export type Recipient = "member" | "staff";
 /** Which preference switches a notification's push alert. */
 export function preferenceFor(kind: NotificationKind, recipient: Recipient): PreferenceKey {
   if (kind === "ANNOUNCEMENT") return "announcements";
+  if (PT_KINDS.includes(kind)) return "training";
   if (recipient === "staff") return "staffAlerts";
   switch (kind) {
     case "CLASS_REMINDER":
@@ -159,6 +171,20 @@ export function pushText(kind: NotificationKind, recipient: Recipient, gymName: 
           return "Your membership ends soon. Renew to keep training.";
         case "PAYMENT_DUE":
           return "You have a payment due. Open the app for details.";
+        case "PT_ASSIGNED":
+          return "You have a new personal trainer. Open the app to see who.";
+        case "PT_ENDED":
+          return "There's a change to your personal training.";
+        case "PT_SESSION_BOOKED":
+          return "A personal training session was booked for you.";
+        case "PT_SESSION_CANCELLED":
+          return "A personal training session was cancelled.";
+        case "PT_SESSION_REMINDER":
+          return "Your personal training session starts soon.";
+        case "PT_CREDITS_LOW":
+          return "Your PT package is running low.";
+        case "PT_PACKAGE_EXPIRING":
+          return "Some of your PT sessions expire soon.";
         default:
           return "You have a new notification.";
       }
@@ -172,6 +198,18 @@ export function pushText(kind: NotificationKind, recipient: Recipient, gymName: 
         return "A class is fully booked.";
       case "DELETION_REQUEST":
         return "A member asked to delete their account.";
+      case "PT_ASSIGNED":
+        return "You have a new PT client.";
+      case "PT_ENDED":
+        return "A PT client was removed from your list.";
+      case "PT_SESSION_BOOKED":
+        return "A PT session was added to your schedule.";
+      case "PT_SESSION_CANCELLED":
+        return "A PT session on your schedule was cancelled.";
+      case "PT_SESSION_REMINDER":
+        return "You have a PT session soon.";
+      case "PT_CREDITS_LOW":
+        return "A client's PT package is running low.";
       default:
         return "Open FitCRM for details.";
     }

@@ -156,7 +156,7 @@ describe("reports", () => {
 
     const noCsv = { ...managerA, plan: { ...managerA.plan!, features: { ...managerA.plan!.features, csvExport: false } } };
     await expect(exportReport(noCsv, "classes", week(), meta)).rejects.toThrow(FeatureNotInPlanError);
-    for (const kind of ["attendance", "retention", "classes"] as const) {
+    for (const kind of ["attendance", "retention", "classes", "trainers"] as const) {
       expect((await exportReport(ownerA, kind, week(), meta)).csv.split("\r\n")[0]).toContain(",");
     }
   });

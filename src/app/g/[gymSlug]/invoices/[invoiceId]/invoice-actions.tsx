@@ -107,6 +107,7 @@ export function RefundButton({
   refundableMinor,
   currency,
   hasMembership,
+  hasPtPackage = false,
 }: {
   gymSlug: string;
   invoiceId: string;
@@ -114,6 +115,7 @@ export function RefundButton({
   refundableMinor: number;
   currency: string;
   hasMembership: boolean;
+  hasPtPackage?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -137,7 +139,7 @@ export function RefundButton({
               startTransition(async () => {
                 const r = await refundPaymentAction(gymSlug, { ...form.getValues(), invoiceId });
                 if (!r.ok) return void toast.error(r.error);
-                toast.success(r.data.cancelledMembershipId ? "Refund recorded and membership cancelled." : "Refund recorded.");
+                toast.success(r.data.cancelledMembershipId ? "Refund recorded and membership cancelled." : r.data.cancelledPtPackageId ? "Refund recorded and PT package cancelled." : "Refund recorded.");
                 setOpen(false);
                 router.refresh();
               })
@@ -157,10 +159,14 @@ export function RefundButton({
               <Textarea id={`refund-reason-${paymentId}`} rows={2} {...form.register("reason")} aria-invalid={!!e.reason} />
               <FieldMessage message={e.reason?.message} />
             </div>
-            {hasMembership && (
+            {(hasMembership || hasPtPackage) && (
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" className="mt-0.5 size-4" {...form.register("cancelMembership")} />
-                <span>Also cancel the membership this payment was for (access ends today)</span>
+                <span>
+                  {hasMembership
+                    ? "Also cancel the membership this payment was for (access ends today)"
+                    : "Also cancel the PT package this payment was for (its unused sessions can't be booked any more)"}
+                </span>
               </label>
             )}
             <DialogFooter>
@@ -178,7 +184,7 @@ export function RefundButton({
   );
 }
 
-export function VoidInvoiceButton({ gymSlug, invoiceId, isMembershipSale }: { gymSlug: string; invoiceId: string; isMembershipSale: boolean }) {
+export function VoidInvoiceButton({ gymSlug, invoiceId, isMembershipSale, isPtPackage = false }: { gymSlug: string; invoiceId: string; isMembershipSale: boolean; isPtPackage?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -206,7 +212,7 @@ export function VoidInvoiceButton({ gymSlug, invoiceId, isMembershipSale }: { gy
             <DialogHeader>
               <DialogTitle>Void this invoice?</DialogTitle>
               <DialogDescription>
-                Use this for invoices raised by mistake. {isMembershipSale ? "The unpaid membership it created is cancelled too. " : ""}The invoice is kept for your records, marked void.
+                Use this for invoices raised by mistake. {isMembershipSale ? "The unpaid membership it created is cancelled too. " : isPtPackage ? "The unpaid PT package it created is cancelled too. " : ""}The invoice is kept for your records, marked void.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-2">

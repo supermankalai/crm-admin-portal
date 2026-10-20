@@ -48,7 +48,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ gymSlu
             <RecordPaymentButton gymSlug={gymSlug} invoiceId={invoice.id} outstandingMinor={invoice.outstandingMinor} currency={invoice.currency} />
           )}
           {writable && canVoid(invoice) && hasPermission(ctx, "payments.refund") && (
-            <VoidInvoiceButton gymSlug={gymSlug} invoiceId={invoice.id} isMembershipSale={!!invoice.membershipId && !invoice.description?.startsWith("Cancellation fee")} />
+            <VoidInvoiceButton gymSlug={gymSlug} invoiceId={invoice.id} isMembershipSale={!!invoice.membershipId && !invoice.description?.startsWith("Cancellation fee")} isPtPackage={!!invoice.ptPurchase} />
           )}
         </div>
       </div>
@@ -152,7 +152,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ gymSlu
                       <span className="flex items-center gap-2 text-xs text-muted-foreground">
                         {formatDateTime(p.receivedAt, tz)} · {p.recordedBy}
                         {writable && p.refundableMinor > 0 && hasPermission(ctx, "payments.refund") && (
-                          <RefundButton gymSlug={gymSlug} invoiceId={invoice.id} paymentId={p.id} refundableMinor={p.refundableMinor} currency={p.currency} hasMembership={!!invoice.membershipId} />
+                          <RefundButton gymSlug={gymSlug} invoiceId={invoice.id} paymentId={p.id} refundableMinor={p.refundableMinor} currency={p.currency} hasMembership={!!invoice.membershipId} hasPtPackage={!!invoice.ptPurchase && !invoice.ptPurchase.cancelledAt} />
                         )}
                       </span>
                     </div>
