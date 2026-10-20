@@ -1,0 +1,32 @@
+# A member books an open class, then joins the waitlist of a full one.
+# Uses the "Maestro …" classes from the seed (npm run db:seed resets them).
+appId: com.fitcrm.app.dev
+name: Book a class and join a waitlist
+tags: [member]
+---
+- runFlow:
+    file: ../subflows/login.yaml
+    env:
+      EMAIL: member1@irontemple.example
+      PASSWORD: Member#2026
+- extendedWaitUntil:
+    visible: "Classes"
+    timeout: 20000
+- tapOn: "Classes"
+- scrollUntilVisible:
+    element: "Maestro Open Class"
+    timeout: 30000
+- tapOn: "Maestro Open Class"
+- tapOn: "Book this class"
+- extendedWaitUntil:
+    visible: "You're booked. See you there!"
+    timeout: 15000
+- back
+- scrollUntilVisible:
+    element: "Maestro Full Class"
+    timeout: 30000
+- tapOn: "Maestro Full Class"
+- tapOn: "Join the waitlist"
+- extendedWaitUntil:
+    visible: ".*number 1 on the waitlist.*"
+    timeout: 15000

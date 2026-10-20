@@ -452,3 +452,35 @@ all followed by the usual gate (migrate, seed, typecheck, lint, tests, web build
   - The More tab shows the unread count (polled every 60 s while the app is open).
   - Inbox and profile are `sensitive` (memory only); announcements are cached.
   - Push needs `EAS_PROJECT_ID` and a development or production build. Expo Go on Android can't receive remote push (SDK 53+). Without it the app works the same, without phone alerts.
+
+## 16. Phase 7 security review
+
+Two independent read-only reviews, one of the server (mobile API, tenant layer, RLS and definer functions) and one of the app, were each checked against the code before any fix. Each fix has a regression test.
+
+**Fixed:**
+
+| Finding | Severity | Fix |
+|---|---|---|
+| A front-desk code invite could create a platform login for any email or phone staff typed in (the code is shown to staff, so redeeming it proved nothing about owning the address). The invite password check also skipped the per-account login limits. | High | Code invites that create a new account need a 6-digit code sent to the bound email or phone: `POST /auth/invite/send-code`, derived with an HMAC and valid for 10 minutes, with send and check limits per invite. Linking an existing account uses the login rate limits. |
+| The biometric lock was an overlay: React Native modals and iOS modal screens could show above it, screen readers on Android could reach content behind it, and a locked cold start mounted the app and refreshed tokens. | High | While locked, only the lock screen is mounted. |
+| A refresh finishing after sign-out wrote the refresh token back, so the next start signed the person in again. A refresh that started under the old gym could undo a gym switch. | High | A sign-out epoch: stale results are dropped. A rotated refresh token is still kept across a gym switch, because reusing the spent one would revoke the session. |
+| Sign-out only told the server when an access token was in memory (a locked cold start, or offline). | Medium | Always calls logout (refreshing first). Delivered notifications are dismissed. |
+| Bodies were read in full before the size check, and a missing `Content-Length` passed. | Medium | A streaming reader counts bytes and stops at the limit, for JSON and multipart. The image pixel limit is 24 MP, and the per-member photo cap is re-checked under a lock with the insert. |
+| Personal data (profile, devices, trainer schedules and plans, PT sessions, the member's plan notes) was persisted to the AsyncStorage cache. | Medium | Marked `sensitive` (memory only). |
+| The app-switcher snapshot showed live content; the lock decision on resume waited on SecureStore. | Medium | A privacy cover while the app is inactive or in the background, and iOS app-switcher blur, when the lock is on. Preferences are cached in memory so the decision is synchronous. |
+| Pushes went to devices idle past the refresh lifetime and to gyms whose plan had dropped the app. A token registered by two people reached both. | Low | Filtered on device activity (30 days) and plan flags. For a shared token, the newest registration wins. |
+| OTP requests answered slower for known accounts. | Low | Delivery happens off the request path. |
+| RLS let any staff role, including trainers, write member app accounts and invites. | Low | Writes are limited to owners, managers and front desk (`app_can_manage_member_app()`). |
+| A tapped push could switch to any gym slug in its payload. | Low | Only gyms in the person's own list. |
+| No screenshot block on Progress; `cursor=0` returned 500; the contract called the member's workout note "private". | Low | Fixed; the note is described as being for the member's trainers. |
+| A fresh install on iOS could resume the previous install's session (the Keychain survives deletion). | Low | The first launch wipes credentials. |
+| A staging build would load `.env.production` (Expo picks env files by NODE_ENV). An EAS build without `APP_ENV` would be a development build allowing HTTP. | Low | `eas.json` sets `APP_ENV` and the API URL per profile, the config refuses an EAS build without `APP_ENV`, and `.env.staging` is added. |
+
+**Accepted for now (documented):**
+- **Signed links outlive sign-out briefly:** a file or photo link issued before sign-out keeps working for up to its 5-minute lifetime. Access is still re-checked against the person and gym on every fetch.
+- **No grace window for refresh retries:** a client that retries after losing the response looks like token reuse and is signed out. This is safer than a grace window, at the cost of an occasional extra sign-in.
+- **Booking policies are broad by design:** during a member's own booking action, RLS lets the transaction touch other bookings and credits in that class. Waitlist promotion needs this, and the action code is narrow and tested.
+
+**Isolation testing:**
+- `tests/integration/isolation-matrix.test.ts` covers every table: RLS enabled and forced, cross-gym reads and writes refused, owner visibility.
+- `tests/integration/mobile-api-matrix.test.ts` covers every mobile endpoint from the contract: authentication, role boundaries, cross-gym and cross-member ids in path and body, a leak scan of everything gym B can list, and plan flags.

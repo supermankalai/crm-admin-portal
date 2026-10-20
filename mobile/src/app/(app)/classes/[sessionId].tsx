@@ -42,9 +42,13 @@ function StaffClassDetail() {
   const booked = c.bookings.filter((b) => b.status !== "WAITLISTED" && b.status !== "CANCELLED");
   const waiting = c.bookings.filter((b) => b.status === "WAITLISTED").sort((a, b) => (a.waitlistPosition ?? 0) - (b.waitlistPosition ?? 0));
   const markable = c.canMarkAttendance && online && !!gym?.access.writable;
-  const row = (b: (typeof c.bookings)[number]) => {
+  const row = (b: (typeof c.bookings)[number], statusTestId: string) => {
     const st = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "zinc" as const };
-    const chip = <StatusChip label={b.status === "WAITLISTED" && b.waitlistPosition ? `Waitlist #${b.waitlistPosition}` : st.label} tone={st.tone} />;
+    const chip = (
+      <View testID={statusTestId}>
+        <StatusChip label={b.status === "WAITLISTED" && b.waitlistPosition ? `Waitlist #${b.waitlistPosition}` : st.label} tone={st.tone} />
+      </View>
+    );
     const confirmed = ["BOOKED", "ATTENDED", "NO_SHOW"].includes(b.status);
     return (
       <View key={b.bookingId}>
@@ -89,14 +93,14 @@ function StaffClassDetail() {
         Booked ({booked.length})
       </Text>
       <View className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        {booked.length ? booked.map(row) : <Text className="p-4 text-base text-zinc-500 dark:text-zinc-400">No bookings yet.</Text>}
+        {booked.length ? booked.map((b, i) => row(b, `booking-status-${i}`)) : <Text className="p-4 text-base text-zinc-500 dark:text-zinc-400">No bookings yet.</Text>}
       </View>
       {waiting.length ? (
         <>
           <Text accessibilityRole="header" className="px-1 text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
             Waitlist ({waiting.length})
           </Text>
-          <View className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">{waiting.map(row)}</View>
+          <View className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">{waiting.map((b, i) => row(b, `waitlist-status-${i}`))}</View>
         </>
       ) : null}
     </ScrollView>

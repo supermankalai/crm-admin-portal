@@ -18,7 +18,7 @@ function classDate() {
 
 /** Members whose time-based membership covers the class date, so booking needs no credits. */
 const eligibleMembers = (n: number) =>
-  rows(`SELECT m."memberNumber" AS number, m."firstName" || ' ' || m."lastName" AS name FROM $S."Member" m JOIN $S."Gym" g ON g.id = m."gymId"
+  rows(`SELECT DISTINCT ON (m."memberNumber") m."memberNumber" AS number, m."firstName" || ' ' || m."lastName" AS name FROM $S."Member" m JOIN $S."Gym" g ON g.id = m."gymId"
           JOIN $S."Membership" s ON s."memberId" = m.id
          WHERE g.slug = 'iron-temple' AND m."deletedAt" IS NULL AND s.status = 'ACTIVE' AND s."cancelledAt" IS NULL AND s."classCreditsRemaining" IS NULL
            AND s."startDate" <= ${CLASS_DAY} AND s."endDate" >= ${CLASS_DAY}

@@ -6,7 +6,7 @@ import { useBrand } from "@/hooks/use-brand";
 import { useSession } from "@/hooks/use-session";
 import { useUnreadCount } from "@/lib/inbox-queries";
 import { firstTimeHandled, gymOfResponse, registerForPush } from "@/lib/push";
-import { selectGym } from "@/lib/session";
+import { selectGym, session } from "@/lib/session";
 import { ALL_TABS, routesFor, TAB_META, tabsFor } from "@/nav/tabs";
 
 /**
@@ -32,7 +32,8 @@ export default function AppTabs() {
     const open = async (response: Notifications.NotificationResponse | null) => {
       if (!response || !firstTimeHandled(response)) return;
       const target = gymOfResponse(response);
-      if (target && target !== slug) await selectGym(target).catch(() => undefined);
+      // The payload is untrusted: only switch to a gym this person can actually use.
+      if (target && target !== slug && session.getState().gyms.some((g) => g.slug === target && g.appAccess.allowed)) await selectGym(target).catch(() => undefined);
       router.push("/more/notifications");
     };
     void open(Notifications.getLastNotificationResponse());

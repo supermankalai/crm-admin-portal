@@ -11,7 +11,7 @@ const dateFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "sho
 export default function DevicesScreen() {
   const online = useOnline();
   const qc = useQueryClient();
-  const devices = useQuery({ queryKey: ["me", "devices"], queryFn: () => api.call("devices") });
+  const devices = useQuery({ queryKey: ["me", "devices"], queryFn: () => api.call("devices"), meta: { sensitive: true } });
   const revoke = useMutation({
     mutationFn: (deviceId: string) => api.call("revokeDevice", { params: { deviceId } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me", "devices"] }),

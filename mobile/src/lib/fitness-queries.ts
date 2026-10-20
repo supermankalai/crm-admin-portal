@@ -5,9 +5,9 @@ import { gymKey } from "./query";
 import { api } from "./session";
 
 /**
- * Workouts, progress and trainer data. Measurements, photos, notes and client details are
- * `sensitive`: memory only, never written to the device's cache. Workout plans and schedules are
- * cached so a member can follow their plan offline.
+ * Workouts, progress and trainer data. Everything here is `sensitive` (memory only, never written
+ * to the device's cache): measurements, photos, notes and client details, but also plans (trainer
+ * notes, client names) and schedules (client names).
  */
 
 export type MemberWorkouts = ResponseOf<"memberWorkouts">;
@@ -31,7 +31,7 @@ function useInvalidate() {
 
 export function useMemberWorkouts() {
   const slug = useGymSlug();
-  return useQuery({ queryKey: gymKey(slug, "workouts"), queryFn: () => api.call("memberWorkouts") });
+  return useQuery({ queryKey: gymKey(slug, "workouts"), queryFn: () => api.call("memberWorkouts"), meta: { sensitive: true } });
 }
 
 export function useCompleteWorkout() {
@@ -44,7 +44,7 @@ export function useCompleteWorkout() {
 
 export function useMemberSessions() {
   const slug = useGymSlug();
-  return useQuery({ queryKey: gymKey(slug, "pt-sessions"), queryFn: () => api.call("memberTrainingSessions") });
+  return useQuery({ queryKey: gymKey(slug, "pt-sessions"), queryFn: () => api.call("memberTrainingSessions"), meta: { sensitive: true } });
 }
 
 export function useMemberProgress() {
@@ -80,7 +80,7 @@ export function useDeletePhoto() {
 
 export function useTrainerSchedule() {
   const slug = useGymSlug();
-  return useQuery({ queryKey: gymKey(slug, "trainer", "schedule"), queryFn: () => api.call("trainerSchedule", { query: {} }) });
+  return useQuery({ queryKey: gymKey(slug, "trainer", "schedule"), queryFn: () => api.call("trainerSchedule", { query: {} }), meta: { sensitive: true } });
 }
 
 export function useTrainerClients() {
@@ -106,12 +106,12 @@ export function useAddNote(memberId: string) {
 
 export function useTrainerPlans() {
   const slug = useGymSlug();
-  return useQuery({ queryKey: gymKey(slug, "trainer", "plans"), queryFn: () => api.call("trainerPlans") });
+  return useQuery({ queryKey: gymKey(slug, "trainer", "plans"), queryFn: () => api.call("trainerPlans"), meta: { sensitive: true } });
 }
 
 export function useTrainerPlan(planId: string | undefined) {
   const slug = useGymSlug();
-  return useQuery({ queryKey: gymKey(slug, "trainer", "plan", planId ?? "new"), queryFn: () => api.call("trainerPlan", { params: { planId: planId! } }), enabled: !!planId });
+  return useQuery({ queryKey: gymKey(slug, "trainer", "plan", planId ?? "new"), queryFn: () => api.call("trainerPlan", { params: { planId: planId! } }), enabled: !!planId, meta: { sensitive: true } });
 }
 
 export function useSavePlan() {

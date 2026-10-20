@@ -32,6 +32,8 @@ export default function CheckInTab() {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<CheckInCandidate[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // How the server matched the search (a typed or pasted QR code counts as QR), for the record.
+  const [searchMethod, setSearchMethod] = useState<"QR" | "MEMBER_ID" | "NAME_SEARCH">("NAME_SEARCH");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [gate] = useState(() => createScanGate());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,6 +91,7 @@ export default function CheckInTab() {
     try {
       const r = await lookup.mutateAsync(query.trim());
       setCandidates(r.candidates);
+      setSearchMethod(r.method);
       if (r.candidates.length === 0) setSearchError("No one found. Try a different spelling or the member number.");
     } catch (e) {
       setSearchError(errorMessage(e));
@@ -169,7 +172,7 @@ export default function CheckInTab() {
                 <StatusChip label={allowed ? "Can check in" : c.decision.message} tone={allowed ? "green" : "red"} />
                 {c.overdueInvoices ? <StatusChip label={`${c.overdueInvoices} overdue`} tone="amber" /> : null}
               </View>
-              <Button label={allowed ? "Check in" : "Record attempt"} variant={allowed ? "primary" : "secondary"} onPress={() => admit(c.id, /^\d+$/.test(query.trim()) ? "MEMBER_ID" : "NAME_SEARCH")} loading={checkIn.isPending} disabled={disabled} />
+              <Button label={allowed ? "Check in" : "Record attempt"} variant={allowed ? "primary" : "secondary"} onPress={() => admit(c.id, searchMethod)} loading={checkIn.isPending} disabled={disabled} />
             </View>
           );
         })}

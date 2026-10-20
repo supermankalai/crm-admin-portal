@@ -2,14 +2,14 @@
 
 This is the Expo app (SDK 57, React Native 0.86, TypeScript strict) for gym staff, trainers and members. It talks only to the FitCRM backend's mobile API (`/api/mobile/v1`), using the shared contract in [`../packages/shared`](../packages/shared). The design is in [docs/MOBILE_DESIGN.md](../docs/MOBILE_DESIGN.md).
 
-> **Status:** mobile Phase 6 of 7. Done so far:
+> **Status:** all 7 mobile phases are complete. The app has:
 > - sign-in, biometric lock, gym switching, branding, and tabs by role;
 > - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, payments and invoices, **workout plans, marking workouts done, measurements with a chart, and private progress photos**;
 > - **front desk, owner and manager features**: QR check-in scanner, dashboard, member search and profiles, add member, sell memberships, record payments, alerts, and the class overview;
 > - **trainer features**: schedule (classes, PT sessions, shifts), class attendance, clients with progress, photos and private notes, workout plans and templates, and PT session booking;
 > - **for everyone**: a notification inbox (unread count on the More tab), push alerts with per-category settings, and gym announcements; for members, editing contact details and asking for account deletion.
 >
-> Phase 7 adds the security review, Maestro end-to-end tests and EAS builds.
+> Phase 7 added a security review (with its fixes), a contract-driven isolation test across every endpoint, Maestro end-to-end flows and EAS build profiles.
 
 ## Running it
 
@@ -44,9 +44,9 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 - **Face ID** is the exception: Expo Go can't use it on iPhone, so the app lock falls back to your passcode there.
 - Fingerprint unlock on Android works in Expo Go.
 - A development build has real Face ID and **push alerts on the phone**:
-  - in the cloud, with `npx eas-cli@latest build --profile development` (set up in Phase 7);
+  - in the cloud, with EAS (see **Builds** below);
   - locally, with `npx expo run:android` (needs Android Studio).
-- **Push alerts need two things:** a development or production build (Expo Go on Android can't receive remote push since SDK 53), and `EAS_PROJECT_ID` set when you build. Both come in Phase 7.
+- **Push alerts need two things:** a development or production build (Expo Go on Android can't receive remote push since SDK 53), and `EAS_PROJECT_ID` set when you build (see **Builds** below).
   - Until then, everything still lands in **More → Notifications**.
   - To see exactly what a phone *would* show, run `npm run jobs:watch` in the root and open the `.dev-outbox/*.push.json` files.
 
@@ -113,9 +113,60 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
   - **Workout plans** in the side menu: every trainer's plans, templates, editing and giving plans to clients.
 - **Waitlist:** sign in as two members. Fill a class with the first and join its waitlist with the second. When the first cancels, the second gets "You're in!".
 
-To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
+To try an invite:
+1. Tap *I have an invite from my gym* and enter `WELC-OME2`.
+2. Front-desk codes that create a new account must be confirmed with a code sent to the invited email or phone, so nobody can claim someone else's address. Tap *Send code*.
+3. In development the code is in the newest file in `.dev-outbox/`, in the root folder.
+4. Enter it with your new password.
 
 **To see a logo:** sign in to the web portal as `owner@irontemple.example`, go to Settings → Branding, upload a logo, then reopen the gym in the app.
+
+## Builds (EAS)
+
+`eas.json` has one profile per environment. Each profile sets `APP_ENV` (and the API URL for staging and production), and a build on EAS without `APP_ENV` is refused.
+
+| Profile | APP_ENV | App | API | Use |
+|---|---|---|---|---|
+| `development` | development | FitCRM (Dev), `com.fitcrm.app.dev` | your PC (from `.env.development(.local)`), plain HTTP allowed | development build: real Face ID, push, Maestro |
+| `development-simulator` | development | same, iOS simulator build | | |
+| `preview` | staging | FitCRM (Staging), `com.fitcrm.app.staging` | `https://staging.fitcrm.example` (HTTPS only) | testers (internal distribution) |
+| `production` | production | FitCRM, `com.fitcrm.app` | `https://app.fitcrm.example` (HTTPS only) | Play Store / App Store |
+
+**One-time setup** (needs your Expo account):
+1. Run `npx eas-cli@latest login`, then `npx eas-cli@latest init` in `mobile/`. Note the project id it prints.
+2. Set `EAS_PROJECT_ID` to that id, and `EXPO_OWNER` to your Expo account or organisation:
+   - for local builds, in `mobile/.env.development.local`;
+   - for cloud builds, as EAS environment variables.
+   The id is public (it identifies the project, nothing more). Push tokens need it.
+3. Change the staging and production API URLs in `eas.json` and `.env.staging` / `.env.production` to your real HTTPS addresses.
+
+**Building:**
+- `npx eas-cli@latest build --profile development --platform android`: install the APK on your phone, then run `npx expo start --dev-client`.
+- `npx eas-cli@latest build --profile preview --platform android`: a staging APK to share.
+- `npx eas-cli@latest build --profile production --platform all`, then `npx eas-cli@latest submit`.
+- No EAS account? `npx expo run:android` makes a local development build (needs Android Studio).
+
+**Push alerts from the server:** set `PUSH_PROVIDER=expo` in the root `.env` and run `npm run jobs:watch` (or schedule `npm run jobs:run`).
+
+## End-to-end tests (Maestro)
+
+`.maestro/` holds the five journeys from the spec:
+- **`01-member-login-card`:** a member signs in and sees the rotating check-in QR code.
+- **`02-frontdesk-scan-qr`:** the front desk checks the member in from their live code and sees *Allowed in*. A second use of the same code is refused.
+  - An emulator can't point its camera at another phone, so the flow fetches the member's live code from the API (`scripts/member-qr.js`) and enters it in the check-in search.
+  - That search runs the same lookup and check-in as a camera scan.
+- **`03-member-book-and-waitlist`:** a member books an open class, then joins the waitlist of a full one.
+- **`04-trainer-attendance`:** a trainer opens a class they teach and marks a member attended.
+- **`05-gym-switching`:** `alex.member@fitcrm.example` picks Iron Temple, then switches to Zen Strength.
+
+**Running them:**
+1. Install Maestro: https://maestro.dev, which needs Java 17+.
+2. Start an Android emulator, or connect a phone with USB debugging.
+3. Install a **development build**: `npx expo run:android`, or the EAS `development` profile. Point it at your backend via `.env.development.local`. On the emulator that's `http://10.0.2.2:3000`.
+4. In the root, run `npm run db:seed`. The seed creates fixed "Maestro …" classes, and re-seeding resets them so the flows can run again.
+5. Start the backend: `npm run dev:lan`.
+6. In `mobile/`, run `npx expo start --dev-client`.
+7. In `mobile/`, run `maestro test .maestro`, or one flow with `maestro test .maestro/flows/02-frontdesk-scan-qr.yaml`. The QR helper calls the API at `http://localhost:3000`; pass `-e API_URL=…` to change it.
 
 ## Scripts
 
@@ -146,4 +197,9 @@ To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
   - Production builds strip every `console` call.
   - Android backup is off.
   - The app bundle contains no secrets, only the public API URL.
-- **Environments:** `APP_ENV=development|staging|production` (EAS build profiles in Phase 7) sets the app name, the bundle id and HTTP cleartext. `EXPO_PUBLIC_API_URL` comes from `.env.<env>` / `.env.<env>.local`.
+- **Environments:** `APP_ENV=development|staging|production` (set by the EAS profile) sets the app name, the bundle id and HTTP cleartext. `EXPO_PUBLIC_API_URL` comes from the EAS profile, or from `.env.<env>` / `.env.<env>.local` for local runs.
+- **App lock:**
+  - While locked, only the lock screen is mounted: nothing behind it is rendered or fetched, and no modals can show above it.
+  - When the lock is on, a privacy cover (and iOS's native blur) hides the app in the app switcher.
+  - A fresh install never resumes a previous install's session left in the iOS Keychain.
+- **Sign-out** always tells the server, refreshing first if needed, so the device session ends and push alerts stop. A refresh that finishes after sign-out is discarded.

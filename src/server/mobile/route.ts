@@ -51,6 +51,36 @@ export function errorResponse(error: unknown, auth?: unknown): NextResponse {
   return NextResponse.json(errorBody("internal", "Something went wrong. Please try again."), { status: 500, headers: NO_STORE });
 }
 
+/**
+ * Read the body, stopping as soon as it passes `max` bytes. The Content-Length header is only a
+ * hint (it may be missing, e.g. chunked uploads), so the bytes themselves are counted.
+ */
+async function readCapped(req: NextRequest, max: number, tooLarge: string): Promise<Uint8Array<ArrayBuffer>> {
+  const declared = Number(req.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > max) throw new BadRequestError(tooLarge, 413);
+  if (!req.body) return new Uint8Array();
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new BadRequestError(tooLarge, 413);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 function parse<T extends z.ZodType>(schema: T, value: unknown, what: string): z.output<T> {
   const result = schema.safeParse(value);
   if (!result.success) {
@@ -78,12 +108,12 @@ export function mobileRoute<E extends Endpoint>(def: E, handler: (args: MobileHa
       let body: unknown;
       let file: Buffer | undefined;
       if (def.upload) {
-        const length = Number(req.headers.get("content-length") ?? 0);
-        if (length > def.upload.maxBytes + MAX_BODY_BYTES) throw new BadRequestError("The file is too large.", 413);
-        if (!req.headers.get("content-type")?.includes("multipart/form-data")) throw new BadRequestError("Send multipart/form-data.", 415);
+        const contentType = req.headers.get("content-type") ?? "";
+        if (!contentType.includes("multipart/form-data")) throw new BadRequestError("Send multipart/form-data.", 415);
+        const bytes = await readCapped(req, def.upload.maxBytes + MAX_BODY_BYTES, "The file is too large.");
         let form: FormData;
         try {
-          form = await req.formData();
+          form = await new Response(bytes, { headers: { "content-type": contentType } }).formData();
         } catch {
           throw new BadRequestError("Malformed upload.");
         }
@@ -94,11 +124,8 @@ export function mobileRoute<E extends Endpoint>(def: E, handler: (args: MobileHa
         const fields = Object.fromEntries([...form.entries()].filter(([k, v]) => k !== def.upload!.field && typeof v === "string"));
         body = def.body ? parse(def.body, fields, "body") : undefined;
       } else if (def.body) {
-        const length = Number(req.headers.get("content-length") ?? 0);
-        if (length > MAX_BODY_BYTES) throw new BadRequestError("Request too large.", 413);
         if (!req.headers.get("content-type")?.includes("application/json")) throw new BadRequestError("Send JSON (Content-Type: application/json).", 415);
-        const text = await req.text();
-        if (text.length > MAX_BODY_BYTES) throw new BadRequestError("Request too large.", 413);
+        const text = new TextDecoder().decode(await readCapped(req, MAX_BODY_BYTES, "Request too large."));
         let raw: unknown;
         try {
           raw = JSON.parse(text || "null");

@@ -1,0 +1,19 @@
+# Signs in from a clean install. Params: EMAIL, PASSWORD.
+appId: com.fitcrm.app.dev
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible:
+      id: "login-identifier"
+    timeout: 20000
+- tapOn:
+    id: "login-identifier"
+- inputText: ${EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"

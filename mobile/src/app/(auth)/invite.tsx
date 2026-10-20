@@ -34,6 +34,11 @@ export default function InviteScreen() {
   const [invite, setInvite] = useState<Invite | null>(null);
   const [token, setToken] = useState<string>(params.token ?? "");
   const [error, setError] = useState<string | null>(null);
+  // Front-desk codes making a new account: confirm the invited email/phone first.
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string | undefined>();
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const tokenForm = useForm<z.infer<typeof tokenFormSchema>>({ resolver: zodResolver(tokenFormSchema), defaultValues: { token: params.token ?? "" } });
   const newForm = useForm<z.infer<typeof newAccountSchema>>({ resolver: zodResolver(newAccountSchema), defaultValues: { name: "", password: "", confirm: "" } });
   const existingForm = useForm<z.infer<typeof existingSchema>>({ resolver: zodResolver(existingSchema), defaultValues: { password: "" } });
@@ -50,13 +55,29 @@ export default function InviteScreen() {
     }
   });
 
+  const sendCode = async () => {
+    setError(null);
+    setSending(true);
+    try {
+      const r = await api.call("inviteSendCode", { body: { token } });
+      setCodeSentTo(r.destination);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSending(false);
+    }
+  };
+
   const redeem = async (password: string, name?: string) => {
     setError(null);
+    setCodeError(undefined);
     try {
-      await signIn(await api.call("inviteRedeem", { body: { token, password, name, device: deviceInfo() } }));
+      const verificationCode = invite?.needsVerification ? code.trim() : undefined;
+      await signIn(await api.call("inviteRedeem", { body: { token, password, name, verificationCode, device: deviceInfo() } }));
     } catch (e) {
       const fields = fieldErrorsOf(e);
       if (fields.password) newForm.setError("password", { message: fields.password });
+      if (fields.verificationCode) setCodeError(fields.verificationCode);
       setError(errorMessage(e));
     }
   };
@@ -110,8 +131,16 @@ export default function InviteScreen() {
                 )}
               />
               <Controller control={newForm.control} name="confirm" render={({ field, fieldState }) => <TextField label="Confirm password" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} secureTextEntry autoComplete="new-password" />} />
+              {invite.needsVerification ? (
+                <Card className="gap-3">
+                  <Text className="text-base text-zinc-700 dark:text-zinc-300">To make sure it&apos;s you, we&apos;ll send a 6-digit code to {invite.destination}.</Text>
+                  <Button label={codeSentTo ? "Send a new code" : "Send code"} variant="secondary" icon="mail-outline" onPress={sendCode} loading={sending} disabled={!online} />
+                  {codeSentTo ? <Text accessibilityRole="alert" className="text-sm text-zinc-600 dark:text-zinc-400">Code sent to {codeSentTo}.</Text> : null}
+                  <TextField label="Code" value={code} onChangeText={setCode} error={codeError} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" maxLength={6} />
+                </Card>
+              ) : null}
               <FormError message={error} />
-              <Button label="Create account" onPress={newForm.handleSubmit((v) => redeem(v.password, v.name))} loading={newForm.formState.isSubmitting} disabled={!online} />
+              <Button label="Create account" onPress={newForm.handleSubmit((v) => redeem(v.password, v.name))} loading={newForm.formState.isSubmitting} disabled={!online || (invite.needsVerification && code.trim().length !== 6)} />
             </>
           )}
         </>

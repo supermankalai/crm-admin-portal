@@ -7,6 +7,7 @@ import { __resetSessionForTests, api, bootstrap, leaveGym, refreshAccess, select
  * and everything wiped on sign-out or revocation.
  */
 
+const INSTALLED = "fitcrm.installed";
 const store = (SecureStore as unknown as { __store: Map<string, string> }).__store;
 
 const gymA = { slug: "gym-a", name: "Gym A", brandColor: "#ea580c", logoUrl: null, role: "MEMBER" as const, appAccess: { allowed: true, reason: null } };
@@ -118,6 +119,7 @@ describe("refresh", () => {
   });
 
   it("offline keeps the session and the last known data", async () => {
+    await AsyncStorage.setItem(INSTALLED, "1");
     store.set("fitcrm.refresh", "refresh-0".padEnd(43, "x"));
     await AsyncStorage.setItem("fitcrm.session-meta", JSON.stringify({ user: { id: "u1", name: "Alex" }, gyms: [gymA], gym: currentA }));
     global.fetch = jest.fn(async () => {
@@ -137,6 +139,7 @@ describe("refresh", () => {
   });
 
   it("biometric lock on start defers the refresh until unlocked", async () => {
+    await AsyncStorage.setItem(INSTALLED, "1");
     store.set("fitcrm.refresh", "refresh-0".padEnd(43, "x"));
     route = () => refreshOk(5);
     await bootstrap({ lockOnStart: true });
@@ -177,6 +180,76 @@ describe("gyms and sign-out", () => {
     }) as unknown as typeof fetch;
     await signOut();
     expect(session.getState().phase).toBe("signedOut");
+    expect(store.size).toBe(0);
+  });
+});
+
+describe("security review fixes", () => {
+  const pending = () => {
+    let resolve!: (v: { status: number; body: unknown }) => void;
+    const promise = new Promise<{ status: number; body: unknown }>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+
+  it("a fresh install never resumes a session left in the keychain by a previous install", async () => {
+    store.set("fitcrm.refresh", "refresh-old".padEnd(43, "x"));
+    route = () => refreshOk(9);
+    await bootstrap({ lockOnStart: false });
+    expect(session.getState().phase).toBe("signedOut");
+    expect(store.has("fitcrm.refresh")).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(await AsyncStorage.getItem(INSTALLED)).toBe("1");
+  });
+
+  it("a refresh that finishes after sign-out doesn't sign the person back in", async () => {
+    await AsyncStorage.setItem(INSTALLED, "1");
+    store.set("fitcrm.refresh", "refresh-0".padEnd(43, "x"));
+    const slow = pending();
+    route = (url) => (url.endsWith("/auth/refresh") ? slow.promise : { status: 200, body: { ok: true } });
+    const refreshing = refreshAccess();
+    await new Promise((r) => setTimeout(r, 0));
+    const signingOut = signOut();
+    slow.resolve(refreshOk(7));
+    await Promise.all([refreshing.catch(() => false), signingOut]);
+    expect(store.has("fitcrm.refresh")).toBe(false);
+    expect(session.getState().phase).toBe("signedOut");
+  });
+
+  it("keeps a rotated refresh token but not the old gym's access when the gym changed meanwhile", async () => {
+    route = (url, init) => {
+      const slug = JSON.parse(String(init.body ?? "{}")).gymSlug as string;
+      return url.endsWith("/auth/select-gym") ? { status: 200, body: { accessToken: `a-${slug}`, accessTokenExpiresAt: new Date().toISOString(), gym: { ...currentA, slug, name: slug } } } : { status: 404, body: {} };
+    };
+    await signIn(loginResponse([gymA, { ...gymA, slug: "gym-b", name: "Gym B" }]));
+    await selectGym("gym-a");
+    const slow = pending();
+    const prev = route;
+    route = (url, init) => (url.endsWith("/auth/refresh") ? slow.promise : prev(url, init));
+    const refreshing = refreshAccess();
+    await new Promise((r) => setTimeout(r, 0));
+    await selectGym("gym-b");
+    slow.resolve(refreshOk(8)); // scoped to gym-a
+    await refreshing;
+    expect(store.get("fitcrm.refresh")).toBe("refresh-8".padEnd(43, "x"));
+    expect(session.getState().gym?.slug).toBe("gym-b");
+    route = () => ({ status: 200, body: { ok: true } });
+    await api.call("logout");
+    expect(calls.at(-1)?.init.headers).toMatchObject({ Authorization: "Bearer a-gym-b" });
+  });
+
+  it("sign-out reaches the server even with no access token in memory (locked cold start)", async () => {
+    await AsyncStorage.setItem(INSTALLED, "1");
+    store.set("fitcrm.refresh", "refresh-0".padEnd(43, "x"));
+    // Like the real server: logout needs a valid access token.
+    route = (url, init) =>
+      url.endsWith("/auth/refresh")
+        ? refreshOk(3)
+        : (init.headers as Record<string, string> | undefined)?.Authorization
+          ? { status: 200, body: { ok: true } }
+          : { status: 401, body: { error: { code: "unauthenticated", message: "Please sign in again." } } };
+    await bootstrap({ lockOnStart: true });
+    await signOut();
+    expect(calls.map((c) => c.url.split("/api/mobile/v1")[1])).toEqual(["/auth/logout", "/auth/refresh", "/auth/logout"]);
     expect(store.size).toBe(0);
   });
 });

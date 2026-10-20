@@ -99,7 +99,7 @@ export async function processPhoto(bytes: Buffer) {
   if (!Object.values(IMAGE_TYPES).some((t) => t.magic(bytes))) throw new ValidationError("Upload a JPEG, PNG or WebP photo.", { photo: ["Upload a JPEG, PNG or WebP photo."] });
   let out: Buffer;
   try {
-    out = await sharp(bytes, { failOn: "error", limitInputPixels: 50_000_000 })
+    out = await sharp(bytes, { failOn: "error", limitInputPixels: 24_000_000 })
       .rotate()
       .resize({ width: PHOTO_MAX_SIDE, height: PHOTO_MAX_SIDE, fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 82, mozjpeg: true })
@@ -113,14 +113,17 @@ export async function processPhoto(bytes: Buffer) {
 export async function uploadPhoto(ctx: MemberContext, raw: Buffer, takenOn: DateString) {
   assertMemberWritable(ctx);
   assertRecordDate(takenOn, ctx.gym.timezone);
-  const count = await inMember(ctx, (tx) => tx.progressPhoto.count({ where: { memberId: ctx.memberId } }));
-  if (count >= MAX_PHOTOS_PER_MEMBER) throw new ValidationError(`You can keep up to ${MAX_PHOTOS_PER_MEMBER} photos. Delete some old ones first.`);
+  const tooMany = `You can keep up to ${MAX_PHOTOS_PER_MEMBER} photos. Delete some old ones first.`;
+  // Cheap early answer; the authoritative check is repeated under a lock with the insert below.
+  if ((await inMember(ctx, (tx) => tx.progressPhoto.count({ where: { memberId: ctx.memberId } }))) >= MAX_PHOTOS_PER_MEMBER) throw new ValidationError(tooMany);
   const photo = await processPhoto(raw);
   const key = `${ctx.gym.id}/progress-photo/${randomUUID()}.jpg`;
   const storage = getStorage();
   await storage.put(key, photo.bytes);
   try {
     return await inMember(ctx, async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"progress-photos:" + ctx.memberId}))`;
+      if ((await tx.progressPhoto.count({ where: { memberId: ctx.memberId } })) >= MAX_PHOTOS_PER_MEMBER) throw new ValidationError(tooMany);
       const row = await tx.progressPhoto.create({
         data: { gymId: ctx.gym.id, memberId: ctx.memberId, takenOn: fromDateString(takenOn), storageKey: key, mimeType: photo.mimeType, sizeBytes: photo.bytes.length, sha256: photo.sha256 },
         select: { id: true, takenOn: true },

@@ -53,6 +53,19 @@ export function inviteLinkHash(token: string): string {
 }
 
 /** 6-digit one-time code. */
+/** A front-desk code invite proves nothing about who holds the email/phone (staff saw the code). */
+export const INVITE_VERIFY_WINDOW_SECONDS = 10 * 60;
+
+/**
+ * The 6-digit code that proves the person redeeming a front-desk code invite controls the email or
+ * phone it's bound to. Derived (not stored): it depends on the invite, the identifier and a
+ * 10-minute window, and the invite itself can be used only once.
+ */
+export function inviteVerificationCode(inviteId: string, identifier: string, window: number): string {
+  const mac = createHmac("sha256", mobileKey("otp")).update(`invite-verify|${inviteId}|${identifier}|${window}`).digest();
+  return String(mac.readUInt32BE(0) % 1_000_000).padStart(6, "0");
+}
+
 export function newOtpCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }

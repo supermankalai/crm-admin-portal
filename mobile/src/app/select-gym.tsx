@@ -23,6 +23,8 @@ export default function SelectGymScreen() {
   // Refresh the list (roles, plans and logos may have changed); the cached list shows meanwhile.
   useQuery({
     queryKey: ["me"],
+    // Name, email and phone: memory only.
+    meta: { sensitive: true },
     queryFn: async () => {
       const me = await api.call("me");
       await updateGyms(me.gyms);

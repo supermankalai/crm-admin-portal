@@ -12,6 +12,8 @@ export default function MoreScreen() {
   const { gyms, gym } = useSession();
   const me = useQuery({
     queryKey: ["me"],
+    // Name, email and phone: memory only.
+    meta: { sensitive: true },
     queryFn: async () => {
       const r = await api.call("me");
       await updateGyms(r.gyms);

@@ -5,13 +5,19 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * build profile or in your shell). Only public values go in here: the API URL and identifiers.
  * There are no secrets in the app bundle.
  */
+// On EAS every build profile sets APP_ENV (eas.json). Refuse to build without it rather than
+// silently producing a development build (plain HTTP allowed) for a store or tester release.
+if (process.env.EAS_BUILD === "true" && !process.env.APP_ENV) throw new Error("APP_ENV must be set for EAS builds (see eas.json).");
 const APP_ENV = (process.env.APP_ENV ?? "development") as "development" | "staging" | "production";
+if (!["development", "staging", "production"].includes(APP_ENV)) throw new Error(`Unknown APP_ENV "${APP_ENV}".`);
 const suffix = APP_ENV === "production" ? "" : `.${APP_ENV === "staging" ? "staging" : "dev"}`;
 const nameSuffix = APP_ENV === "production" ? "" : APP_ENV === "staging" ? " (Staging)" : " (Dev)";
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: `FitCRM${nameSuffix}`,
+  // Your Expo account or organisation (set EXPO_OWNER), used by EAS.
+  ...(process.env.EXPO_OWNER ? { owner: process.env.EXPO_OWNER } : {}),
   slug: "fitcrm",
   version: "1.0.0",
   orientation: "portrait",

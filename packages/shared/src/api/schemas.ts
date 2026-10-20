@@ -61,8 +61,13 @@ export const inviteRedeemRequestSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   /** New account: the password to set. Existing account: its current password. */
   password: z.string().min(1).max(128),
+  /** Front-desk code invites for a new account: the 6-digit code sent to the invited email/phone. */
+  verificationCode: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code").optional(),
   device: deviceInfoSchema,
 });
+
+export const inviteSendCodeRequestSchema = z.object({ token: inviteTokenSchema });
+export const inviteSendCodeResponseSchema = z.object({ sent: z.literal(true), destination: z.string() });
 
 export const refreshRequestSchema = z.object({
   refreshToken: z.string().min(20).max(200),
@@ -148,6 +153,11 @@ export const inviteLookupResponseSchema = z.object({
   hasAccount: z.boolean(),
   /** Masked destination, e.g. "a•••@example.com" or "•••• 4321". */
   destination: z.string(),
+  /**
+   * A front-desk code creating a new account must be confirmed with a code sent to that
+   * email/phone first (POST /auth/invite/send-code), so nobody can claim someone else's address.
+   */
+  needsVerification: z.boolean(),
 });
 
 // ─────────────────────────────── Me ───────────────────────────────
@@ -375,7 +385,7 @@ export const memberStatusSchema = z.enum(["active", "frozen", "expired", "none"]
 export const staffMembersQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: memberStatusSchema.optional(),
-  cursor: z.string().regex(/^\d{1,5}$/).optional(),
+  cursor: z.string().regex(/^[1-9]\d{0,4}$/).optional(),
 });
 
 export const staffMemberRowSchema = z.object({

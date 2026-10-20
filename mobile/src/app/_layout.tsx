@@ -13,6 +13,7 @@ import { useSession } from "@/hooks/use-session";
 import { apiConfig } from "@/lib/config";
 import { clearAllCaches, connectQueryToDevice, forgetGym, persister, queryClient, shouldPersist } from "@/lib/query";
 import { secure } from "@/lib/secure";
+import * as Notifications from "expo-notifications";
 import { configurePushHandling } from "@/lib/push";
 import { bootstrap, session } from "@/lib/session";
 
@@ -21,12 +22,14 @@ configurePushHandling();
 
 // Wipe caches on sign-out/revocation; drop a gym's cached data when leaving it.
 session.onReset(clearAllCaches);
+// Notifications already delivered belong to the person signing out.
+session.onReset(() => Notifications.dismissAllNotificationsAsync().catch(() => undefined));
 session.onLeaveGym(forgetGym);
 
 export default function RootLayout() {
   const scheme = useColorScheme();
   const s = useSession();
-  useAppLock();
+  const covered = useAppLock();
 
   useEffect(() => connectQueryToDevice(), []);
   useEffect(() => {
@@ -65,6 +68,9 @@ export default function RootLayout() {
           <StatusBar style="auto" />
           {s.phase === "booting" ? (
             <View className="flex-1 bg-white dark:bg-zinc-950" />
+          ) : s.locked ? (
+            // Nothing behind the lock is mounted: no screens, modals, queries or token refresh.
+            <LockScreen />
           ) : (
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Protected guard={s.phase === "signedOut"}>
@@ -79,7 +85,7 @@ export default function RootLayout() {
               <Stack.Screen name="app/invite/[token]" />
             </Stack>
           )}
-          {s.locked ? <LockScreen /> : null}
+          {covered && !s.locked ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" className="absolute inset-0 bg-white dark:bg-zinc-950" /> : null}
         </ThemeProvider>
       </PersistQueryClientProvider>
     </SafeAreaProvider>

@@ -33,6 +33,8 @@ export type SessionState = {
 };
 
 const META_KEY = "fitcrm.session-meta";
+/** Present once the app has run on this install (removed with the app). */
+const INSTALLED_KEY = "fitcrm.installed";
 type Meta = { user: SessionState["user"]; gyms: GymSummary[]; gym: CurrentGym | null };
 
 let state: SessionState = { phase: "booting", user: null, gyms: [], gym: null, locked: false, offline: false, signedOutReason: null, gymNotice: null };
@@ -79,6 +81,11 @@ async function saveMeta() {
 // ─────────────────────────────── refresh ───────────────────────────────
 
 let inflight: Promise<boolean> | null = null;
+/**
+ * Bumped on every sign-out (and sign-in). A request that started before must not write tokens or
+ * state afterwards — that would quietly sign the person back in.
+ */
+let epoch = 0;
 
 /** Single-flight refresh. Resolves true when a fresh access token is in memory. */
 export function refreshAccess(): Promise<boolean> {
@@ -89,7 +96,9 @@ export function refreshAccess(): Promise<boolean> {
 }
 
 async function doRefresh(): Promise<boolean> {
+  const started = epoch;
   const refreshToken = await secure.getRefreshToken();
+  if (started !== epoch) return false;
   if (!refreshToken) {
     await signOutLocal("expired");
     return false;
@@ -97,7 +106,15 @@ async function doRefresh(): Promise<boolean> {
   try {
     const gymSlug = state.gym?.slug ?? (await secure.getGymSlug()) ?? undefined;
     const r = await api.call("refresh", { body: { refreshToken, gymSlug } });
+    // Signed out meanwhile: drop everything, including the new refresh token.
+    if (started !== epoch) return false;
+    // Always keep the rotated refresh token: the old one is spent now, and reusing it would make
+    // the server revoke the whole session.
     await secure.setRefreshToken(r.refreshToken);
+    if ((state.gym?.slug ?? undefined) !== gymSlug) {
+      // The person switched gyms while this was in flight; the switch brought its own token.
+      return !!accessToken;
+    }
     accessToken = r.accessToken;
     if (r.gymError) {
       // The gym can't be used any more (removed, plan changed): back to the picker, keep the session.
@@ -126,6 +143,12 @@ async function doRefresh(): Promise<boolean> {
 
 /** App start: restore the last known session (offline-capable), then refresh unless locked. */
 export async function bootstrap(opts: { lockOnStart: boolean }) {
+  // iOS keeps Keychain items after the app is deleted, but AsyncStorage doesn't survive: a fresh
+  // install must not resume the previous install's session.
+  if (!(await AsyncStorage.getItem(INSTALLED_KEY))) {
+    await secure.clearCredentials();
+    await AsyncStorage.setItem(INSTALLED_KEY, "1");
+  }
   const refreshToken = await secure.getRefreshToken();
   if (!refreshToken) {
     setState({ phase: "signedOut" });
@@ -144,6 +167,7 @@ export async function bootstrap(opts: { lockOnStart: boolean }) {
 
 /** After any successful sign-in response (password, code, invite). */
 export async function signIn(r: ResponseOf<"login">) {
+  epoch++; // anything still in flight from an earlier session is now stale
   await secure.setRefreshToken(r.refreshToken);
   await secure.setSessionId(r.sessionId);
   accessToken = r.accessToken;
@@ -154,8 +178,10 @@ export async function signIn(r: ResponseOf<"login">) {
 }
 
 export async function selectGym(slug: string) {
+  const started = epoch;
   const previous = state.gym?.slug;
   const r = await api.call("selectGym", { body: { gymSlug: slug } });
+  if (started !== epoch) return;
   if (previous && previous !== slug) leaveGymHooks.forEach((h) => h(previous));
   accessToken = r.accessToken;
   await secure.setGymSlug(slug);
@@ -177,14 +203,20 @@ export async function updateGyms(gyms: GymSummary[]) {
   await saveMeta();
 }
 
-/** Sign out: tell the server (best effort, it may be offline), then wipe everything local. */
+/**
+ * Sign out: tell the server first, so the device session ends and push alerts stop (refreshing the
+ * access token if needed, e.g. right after a locked cold start). Best effort — offline, the local
+ * wipe still happens.
+ */
 export async function signOut() {
-  if (accessToken) await api.call("logout").catch(() => undefined);
+  if (await secure.getRefreshToken()) await api.call("logout").catch(() => undefined);
   await signOutLocal("logout");
 }
 
 /** Wipe tokens, caches and session meta. Used for sign-out, revocation and expiry. */
 export async function signOutLocal(reason: SignedOutReason) {
+  epoch++;
+  inflight = null;
   const previous = state.gym?.slug;
   accessToken = null;
   await secure.clearCredentials();

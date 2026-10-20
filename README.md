@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 5 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos; push notifications, inbox and alert settings, announcements, profile editing and account deletion, plus web pages for announcements, member app invites, deletion requests and workout plans). See [mobile/README.md](mobile/README.md).**
+> **Build status: all 8 web phases complete. Mobile app: all 7 phases complete (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos; push notifications, inbox and alert settings, announcements, profile editing and account deletion, plus web pages for announcements, member app invites, deletion requests and workout plans; security review, endpoint-by-endpoint isolation tests, Maestro end-to-end flows and EAS builds). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -371,7 +371,7 @@ Each gym also gets:
 | `member18@pulsefitness.example` | `Member#2026` | pulse-fitness | deletion request rejected by the gym, with a note |
 
 Pending member app invites at Iron Temple, to try the invite flow:
-- **Front-desk code** `WELC-OME2`, for member #23.
+- **Front-desk code** `WELC-OME2`, for member #23. Creating an account with a front-desk code also needs a 6-digit confirmation code. It's emailed to that member's address, and in development the email is written to `.dev-outbox/`.
 - **Email link token** `demo-invite-iron-temple-member-24`, for member #24.
 
 Both stay valid for 30 days after seeding.
@@ -495,6 +495,8 @@ The Android emulator reaches your PC at `http://10.0.2.2:3000`.
 | `npm test` | Unit and integration tests (Vitest) |
 | `npm run test:unit` | Business rules, encryption, env validation, password hashing, redaction |
 | `npm run test:integration` | Services, RLS and tenant isolation against a real PostgreSQL (`gym_saas_test`), through the restricted `gym_app` role. [isolation-matrix.test.ts](tests/integration/isolation-matrix.test.ts) loads the full seed and checks **every** table that has a `gymId` column, found from the database catalog, so a new table is covered automatically. For each one it checks that RLS is enabled and forced, that its policies are bound to the current gym, and that gym A cannot read, update, delete, insert into or move rows into gym B. It also checks that support access cannot write. |
+| `npm test -- tests/integration/mobile-api-matrix.test.ts` | The mobile API, endpoint by endpoint, **driven by the shared contract**, so new endpoints are covered automatically. Every endpoint has a route and every route is in the contract. No token or a forged one gets 401. Members are kept off staff endpoints and staff off member endpoints. Gym B's staff and members get "not found" for gym A's ids, in the path or the body, and gym A's rows stay unchanged. One member gets "not found" for another member's records. Nothing gym A owns appears in anything gym B can list. Turning the app off in the plan blocks live tokens. |
+| `cd mobile && maestro test .maestro` | Maestro end-to-end flows on a development build (see [mobile/README.md](mobile/README.md#end-to-end-tests-maestro)) |
 | `npm run test:e2e` | Playwright against `next dev` on port 3100 (its own `.next-e2e` build directory, so it can run alongside `npm run dev`), using `gym_saas_test` reset and seeded per run |
 
 The test databases are rebuilt from migrations on every run. The suites refuse any database whose name doesn't end in `_test`, so your dev data is never touched. First time only: `npx playwright install chromium`.

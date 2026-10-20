@@ -25,6 +25,8 @@ export const RATE_LIMITS = {
   otpVerifyPerIdentifier: { name: "otp:verify:id", limit: 10, windowSeconds: 15 * 60 },
   otpVerifyPerIp: { name: "otp:verify:ip", limit: 30, windowSeconds: 15 * 60 },
   invitePerIp: { name: "member-invite:ip", limit: 30, windowSeconds: 15 * 60 },
+  inviteCodeSendPerInvite: { name: "member-invite:send", limit: 3, windowSeconds: 15 * 60 },
+  inviteCodeCheckPerInvite: { name: "member-invite:check", limit: 5, windowSeconds: 15 * 60 },
   refreshPerIp: { name: "mobile-refresh:ip", limit: 120, windowSeconds: 15 * 60 },
   passwordChangePerUser: { name: "password:user", limit: 5, windowSeconds: 15 * 60 },
   passwordResetPerIp: { name: "reset:ip", limit: 5, windowSeconds: 60 * 60 },

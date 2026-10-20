@@ -45,3 +45,8 @@ example
 # Continuous Native Generation: never commit generated native projects
 /ios
 /android
+
+# Public per-environment settings (only the API URL, no secrets) are committed; *.local stays ignored.
+!.env.development
+!.env.staging
+!.env.production

@@ -5,7 +5,7 @@ import { authenticate, biometricSupport } from "@/lib/biometrics";
 import { signOut, unlocked } from "@/lib/session";
 import { Button } from "./ui";
 
-/** Full-screen biometric lock. Covers everything; screen readers can't reach what's behind it. */
+/** Full-screen biometric lock. Rendered instead of the app: nothing is mounted behind it. */
 export function LockScreen() {
   const [label, setLabel] = useState("Biometrics");
   const [busy, setBusy] = useState(false);
@@ -37,7 +37,7 @@ export function LockScreen() {
   }, []);
 
   return (
-    <View accessibilityViewIsModal className="absolute inset-0 items-center justify-center gap-6 bg-white px-8 dark:bg-zinc-950">
+    <View accessibilityViewIsModal className="flex-1 items-center justify-center gap-6 bg-white px-8 dark:bg-zinc-950">
       <Ionicons name="lock-closed" size={48} color="#71717a" />
       <Text accessibilityRole="header" className="text-center text-2xl font-bold text-zinc-900 dark:text-zinc-50">
         FitCRM is locked

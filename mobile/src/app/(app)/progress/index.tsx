@@ -3,6 +3,7 @@ import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import { usePreventScreenCapture } from "expo-screen-capture";
 import { MEASUREMENTS, progressSummary, seriesFor, type MeasurementKey } from "@fitcrm/shared/domain/progress";
 import { ProgressChart } from "@/components/progress-chart";
 import { Screen } from "@/components/screen";
@@ -20,6 +21,7 @@ import { date, localDay } from "@/lib/format";
  * and their assigned trainers can open them, links last 5 minutes and nothing is cached on disk.
  */
 export default function ProgressTab() {
+  usePreventScreenCapture();
   const router = useRouter();
   const online = useOnline();
   const { gym } = useSession();

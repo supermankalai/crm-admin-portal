@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as inviteLookupRoute from "@/app/api/mobile/v1/auth/invite/lookup/route";
 import * as inviteRedeemRoute from "@/app/api/mobile/v1/auth/invite/redeem/route";
+import * as inviteSendCodeRoute from "@/app/api/mobile/v1/auth/invite/send-code/route";
+import { INVITE_VERIFY_WINDOW_SECONDS, inviteVerificationCode } from "@/server/mobile/crypto";
 import * as loginRoute from "@/app/api/mobile/v1/auth/login/route";
 import * as logoutRoute from "@/app/api/mobile/v1/auth/logout/route";
 import * as otpRequestRoute from "@/app/api/mobile/v1/auth/otp/request/route";
@@ -226,7 +228,7 @@ describe("password change", () => {
 describe("member app invites", () => {
   let memberToken: string;
 
-  it("front desk creates a front-desk code (shown once, stored hashed)", async () => {
+  it("front desk creates a front-desk code (shown once, stored hashed); a new account must prove the email first", async () => {
     const desk = await staffToken("desk.a@test.example");
     const r = await callApi<{ code: string; channel: string; inviteId: string }>(inviteRoute.POST, { token: desk.gymToken, params: { memberId: w.memberA.id }, body: { channel: "CODE" } });
     expect(r.status).toBe(201);
@@ -234,12 +236,23 @@ describe("member app invites", () => {
     const stored = await getOwnerDb().memberAppInvite.findUniqueOrThrow({ where: { id: r.body.inviteId } });
     expect(stored.tokenHash).not.toContain(r.body.code.replace("-", ""));
 
-    const look = await callApi<{ state: string; hasAccount: boolean; firstName: string; destination: string }>(inviteLookupRoute.POST, { body: { token: r.body.code.toLowerCase().replace("-", " ") } });
-    expect(look.body).toMatchObject({ state: "valid", hasAccount: false, firstName: "Alice", destination: "a•••@example.com" });
+    const look = await callApi<{ state: string; hasAccount: boolean; firstName: string; destination: string; needsVerification: boolean }>(inviteLookupRoute.POST, { body: { token: r.body.code.toLowerCase().replace("-", " ") } });
+    expect(look.body).toMatchObject({ state: "valid", hasAccount: false, firstName: "Alice", destination: "a•••@example.com", needsVerification: true });
 
-    const weak = await callApi(inviteRedeemRoute.POST, { body: { token: r.body.code, password: "short", device: device() } });
+    // Whoever holds the code (front-desk staff saw it) can't create a login for that email
+    // without the code sent to it.
+    const noCode = await callApi<{ error: { fieldErrors: Record<string, string[]> } }>(inviteRedeemRoute.POST, { body: { token: r.body.code, name: "Alice Anand", password: "Member-Pass-1", device: device() } });
+    expect(noCode.status).toBe(422);
+    expect(noCode.body.error.fieldErrors.verificationCode[0]).toMatch(/a•••@example.com/);
+    const sent = await callApi<{ destination: string }>(inviteSendCodeRoute.POST, { body: { token: r.body.code } });
+    expect(sent.body).toEqual({ sent: true, destination: "a•••@example.com" });
+    const wrong = await callApi(inviteRedeemRoute.POST, { body: { token: r.body.code, name: "Alice Anand", password: "Member-Pass-1", verificationCode: "000000", device: device() } });
+    expect(wrong.status).toBe(422);
+    const code = inviteVerificationCode(r.body.inviteId, "alice@example.com", Math.floor(Date.now() / 1000 / INVITE_VERIFY_WINDOW_SECONDS));
+
+    const weak = await callApi(inviteRedeemRoute.POST, { body: { token: r.body.code, password: "short", verificationCode: code, device: device() } });
     expect(weak.status).toBe(422);
-    const redeemed = await callApi<Tokens>(inviteRedeemRoute.POST, { body: { token: r.body.code, name: "Alice Anand", password: "Member-Pass-1", device: device("Alice's phone") } });
+    const redeemed = await callApi<Tokens>(inviteRedeemRoute.POST, { body: { token: r.body.code, name: "Alice Anand", password: "Member-Pass-1", verificationCode: code, device: device("Alice's phone") } });
     expect(redeemed.status).toBe(200);
     expect(redeemed.body.gyms).toEqual([expect.objectContaining({ slug: "gym-a", role: "MEMBER", appAccess: { allowed: true, reason: null } })]);
     expect((await callApi(inviteRedeemRoute.POST, { body: { token: r.body.code, password: "Member-Pass-1", device: device() } })).body.error?.message).toMatch(/already been used/);

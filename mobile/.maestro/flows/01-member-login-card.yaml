@@ -1,0 +1,20 @@
+# A member signs in and sees their membership card with a live check-in QR code.
+appId: com.fitcrm.app.dev
+name: Member login and check-in QR
+tags: [member]
+---
+- runFlow:
+    file: ../subflows/login.yaml
+    env:
+      EMAIL: member1@irontemple.example
+      PASSWORD: Member#2026
+- extendedWaitUntil:
+    visible: "My card"
+    timeout: 20000
+- tapOn: "My card"
+- extendedWaitUntil:
+    visible: "Check-in QR code.*"
+    timeout: 15000
+- assertVisible: "Iron Temple Fitness"
+# The code rotates: the label counts down to the next refresh.
+- assertVisible: 'Check-in QR code\. Refreshes in \d+ seconds\.'

@@ -20,6 +20,8 @@ import { EXPO_TOKEN, RECEIPT_BATCH, SEND_BATCH, type PushMessage, type PushProvi
 export const PUSH_MAX_AGE_MS = 6 * 3_600_000;
 /** Expo asks to wait before fetching receipts. */
 export const RECEIPT_DELAY_MS = 15 * 60_000;
+/** Devices idle longer than the refresh-token lifetime are signed out in practice. */
+export const DEVICE_IDLE_MS = 30 * 86_400_000;
 
 type Pending = { id: string; gymId: string; recipientUserId: string; type: NotificationKind; entityType: string | null; entityId: string | null };
 
@@ -36,13 +38,17 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
   const gymIds = [...new Set(pending.map((n) => n.gymId))];
   const userIds = [...new Set(pending.map((n) => n.recipientUserId))];
   const [gyms, staff, members, prefs, tokens, announcements] = await Promise.all([
-    db.gym.findMany({ where: { id: { in: gymIds } }, select: { id: true, name: true, slug: true, status: true } }),
+    db.gym.findMany({
+      where: { id: { in: gymIds } },
+      select: { id: true, name: true, slug: true, status: true, subscription: { select: { plan: { select: { featureMobileApp: true, featureMemberApp: true } } } } },
+    }),
     db.staffMember.findMany({ where: { gymId: { in: gymIds }, userId: { in: userIds }, status: "ACTIVE" }, select: { gymId: true, userId: true } }),
     db.memberAccount.findMany({ where: { gymId: { in: gymIds }, userId: { in: userIds }, status: "ACTIVE", member: { deletedAt: null } }, select: { gymId: true, userId: true } }),
     db.notificationPreference.findMany({ where: { gymId: { in: gymIds }, userId: { in: userIds } } }),
     db.pushToken.findMany({
-      where: { gymId: { in: gymIds }, userId: { in: userIds }, invalidatedAt: null, deviceSession: { revokedAt: null } },
-      select: { id: true, gymId: true, userId: true, token: true },
+      // A device that hasn't refreshed in 30 days can't be signed in any more (refresh tokens expire).
+      where: { gymId: { in: gymIds }, userId: { in: userIds }, invalidatedAt: null, deviceSession: { revokedAt: null, lastSeenAt: { gte: new Date(now.getTime() - DEVICE_IDLE_MS) } } },
+      select: { id: true, gymId: true, userId: true, token: true, updatedAt: true },
     }),
     db.announcement.findMany({ where: { id: { in: pending.filter((n) => n.type === "ANNOUNCEMENT" && n.entityId).map((n) => n.entityId!) } }, select: { id: true, title: true } }),
   ]);
@@ -51,8 +57,14 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
   const staffSet = new Set(staff.map((s) => key(s.gymId, s.userId)));
   const memberSet = new Set(members.map((m) => key(m.gymId, m.userId)));
   const prefBy = new Map(prefs.map((p) => [key(p.gymId, p.userId), p as unknown as Preferences]));
+  // One phone, two people (e.g. reinstalled without signing out): only the latest registration counts.
+  const newestByToken = new Map<string, (typeof tokens)[number]>();
+  for (const t of tokens) {
+    const seen = newestByToken.get(t.token);
+    if (!seen || t.updatedAt > seen.updatedAt) newestByToken.set(t.token, t);
+  }
   const tokensBy = new Map<string, typeof tokens>();
-  for (const t of tokens) tokensBy.set(key(t.gymId, t.userId), [...(tokensBy.get(key(t.gymId, t.userId)) ?? []), t]);
+  for (const t of newestByToken.values()) tokensBy.set(key(t.gymId, t.userId), [...(tokensBy.get(key(t.gymId, t.userId)) ?? []), t]);
   const titleBy = new Map(announcements.map((a) => [a.id, a.title]));
 
   const outgoing: { notificationId: string; pushTokenId: string; message: PushMessage }[] = [];
@@ -63,7 +75,9 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
     const recipient: Recipient | null = staffSet.has(k) ? "staff" : memberSet.has(k) ? "member" : null;
     const devices = (tokensBy.get(k) ?? []).filter((t) => EXPO_TOKEN.test(t.token));
     const prefs = prefBy.get(k) ?? DEFAULT_PREFERENCES;
-    if (!gym || gym.status === "SUSPENDED" || gym.status === "CANCELLED" || !recipient || !devices.length || !prefs[preferenceFor(n.type, recipient)]) {
+    const plan = gym?.subscription?.plan;
+    const appInPlan = recipient === "staff" ? plan?.featureMobileApp : plan?.featureMemberApp;
+    if (!gym || gym.status === "SUSPENDED" || gym.status === "CANCELLED" || !recipient || !appInPlan || !devices.length || !prefs[preferenceFor(n.type, recipient)]) {
       skipped++;
       continue;
     }

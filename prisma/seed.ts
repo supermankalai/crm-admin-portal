@@ -20,6 +20,7 @@ async function main() {
   const { seedMemberApp } = await import("./seed/member-app");
   const { removeSeededPhotoFiles, seedFitness } = await import("./seed/fitness");
   const { seedEngagement } = await import("./seed/engagement");
+  const { seedMaestroFixtures } = await import("./seed/maestro");
 
   const env = getEnv();
   if (!env.MIGRATION_DATABASE_URL) throw new Error("MIGRATION_DATABASE_URL is required to seed");
@@ -75,6 +76,9 @@ async function main() {
 
     console.log("Announcements, notifications and preferences…");
     await seedEngagement(db);
+
+    console.log("Fixtures for the Maestro end-to-end tests…");
+    await seedMaestroFixtures(db);
 
     console.log(`\n✔ Seed complete in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     console.log(`  Super admin: ${SUPER_ADMIN.email} / ${PASSWORDS.superAdmin}`);

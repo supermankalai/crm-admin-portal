@@ -1,4 +1,5 @@
 import "server-only";
+import { timingSafeEqual } from "node:crypto";
 import { createId } from "@paralleldrive/cuid2";
 import type { z } from "zod";
 import type { currentGymSchema, deviceInfoSchema, gymSummarySchema } from "@fitcrm/shared/api/schemas";
@@ -17,7 +18,7 @@ import { resolveMemberContext, type MemberContext } from "@/server/tenant/member
 import { resolveTenant } from "@/server/tenant/resolve";
 import type { TenantContext } from "@/server/tenant/types";
 import { signedFilePath } from "./files";
-import { inviteTokenHash, newOpaqueToken, newOtpCode, otpCodeHash, otpIdentifierHash, sha256Hex } from "./crypto";
+import { INVITE_VERIFY_WINDOW_SECONDS, inviteTokenHash, inviteVerificationCode, newOpaqueToken, newOtpCode, otpCodeHash, otpIdentifierHash, sha256Hex } from "./crypto";
 import { maskEmail, parseIdentifier, type Identifier } from "./identifier";
 import { signAccessToken } from "./tokens";
 
@@ -161,13 +162,17 @@ export async function requestOtp(input: { identifier: string }, meta: RequestMet
   const idHash = otpIdentifierHash(identifier.normalised);
   await withAnonymous((tx) => tx.$executeRaw`SELECT otp_issue(${user.id}, ${idHash}, ${otpCodeHash(idHash, code)}, ${OTP_TTL_SECONDS}::int)`);
   const text = `Your FitCRM sign-in code is ${code}. It expires in 5 minutes. Never share it — FitCRM staff will never ask for it.`;
-  try {
-    if (identifier.kind === "email") await getEmailProvider().send({ to: identifier.email, subject: "Your FitCRM sign-in code", text });
-    else await getSmsProvider().send({ to: identifier.phone, text });
-  } catch (error) {
-    logger.error("otp delivery failed", { kind: identifier.kind, error });
-  }
-  await recordPlatformAuditStandalone({ action: "auth.otp_requested", actorUserId: user.id, metadata: { channel: "mobile", via: identifier.kind }, meta });
+  // Delivered in the background: waiting for the email/SMS provider would make a known identifier
+  // answer measurably slower than an unknown one (account enumeration by timing).
+  void (async () => {
+    try {
+      if (identifier.kind === "email") await getEmailProvider().send({ to: identifier.email, subject: "Your FitCRM sign-in code", text });
+      else await getSmsProvider().send({ to: identifier.phone, text });
+    } catch (error) {
+      logger.error("otp delivery failed", { kind: identifier.kind, error });
+    }
+    await recordPlatformAuditStandalone({ action: "auth.otp_requested", actorUserId: user.id, metadata: { channel: "mobile", via: identifier.kind }, meta }).catch(() => undefined);
+  })();
   return { sent: true as const };
 }
 
@@ -247,22 +252,74 @@ function invitePhone(row: InviteRow): string | null {
   return row.phone_enc ? decryptField(row.phone_enc, { gymId: row.gym_id, model: "MemberAppInvite", field: "phone", recordId: row.invite_id }) : null;
 }
 
+/** A front-desk code making a new account must prove control of the bound email/phone. */
+const needsVerification = (row: InviteRow) => row.channel === "CODE" && !row.existing_user_id;
+
+/** The email or phone the invite is bound to (normalised), and how to show it masked. */
+function inviteIdentity(row: InviteRow) {
+  const phone = invitePhone(row);
+  return row.email ? { kind: "email" as const, value: row.email, masked: maskEmail(row.email) } : phone ? { kind: "phone" as const, value: phone, masked: maskPhone(phone) } : null;
+}
+
 export async function lookupMemberInvite(input: { token: string }, meta: RequestMeta) {
   const row = await findInvite(input.token, meta);
-  const phone = invitePhone(row);
   return {
     state: row.state,
     gym: { name: row.gym_name, brandColor: row.brand_color },
     firstName: row.first_name,
     hasAccount: !!row.existing_user_id,
-    destination: row.email ? maskEmail(row.email) : phone ? maskPhone(phone) : "",
+    destination: inviteIdentity(row)?.masked ?? "",
+    needsVerification: needsVerification(row),
   };
 }
 
-export async function redeemMemberInvite(input: { token: string; name?: string; password: string; device: Device }, meta: RequestMeta) {
+export async function sendInviteVerification(input: { token: string }, meta: RequestMeta) {
+  const row = await findInvite(input.token, meta);
+  if (row.state !== "valid") throw inviteError(`member_invite:${row.state}`);
+  const who = inviteIdentity(row);
+  if (!who) throw inviteError("member_invite:not_found");
+  if (!needsVerification(row)) return { sent: true as const, destination: who.masked };
+  try {
+    await enforce([[RATE_LIMITS.inviteCodeSendPerInvite, row.invite_id]]);
+  } catch (error) {
+    rateLimited(error, "member.invite_rate_limited", meta, { inviteId: row.invite_id });
+  }
+  const code = inviteVerificationCode(row.invite_id, who.value, Math.floor(Date.now() / 1000 / INVITE_VERIFY_WINDOW_SECONDS));
+  const text = `Your code to join ${row.gym_name} on FitCRM is ${code}. It's valid for about 10 minutes. If you didn't ask for it, ignore this message.`;
+  if (who.kind === "email") await getEmailProvider().send({ to: who.value, subject: `Your code to join ${row.gym_name}`, text });
+  else await getSmsProvider().send({ to: who.value, text });
+  await recordPlatformAuditStandalone({ action: "member.invite_code_sent", metadata: { channel: "mobile", inviteId: row.invite_id, via: who.kind }, meta });
+  return { sent: true as const, destination: who.masked };
+}
+
+/** Accept the current or the previous 10-minute window (a code sent just before a boundary). */
+function verifyInviteCode(row: InviteRow, value: string, code: string) {
+  const now = Math.floor(Date.now() / 1000 / INVITE_VERIFY_WINDOW_SECONDS);
+  const given = Buffer.from(code);
+  return [now, now - 1].some((w) => {
+    const expected = Buffer.from(inviteVerificationCode(row.invite_id, value, w));
+    return expected.length === given.length && timingSafeEqual(expected, given);
+  });
+}
+
+export async function redeemMemberInvite(input: { token: string; name?: string; password: string; verificationCode?: string; device: Device }, meta: RequestMeta) {
   const row = await findInvite(input.token, meta);
   if (row.state !== "valid") throw inviteError(`member_invite:${row.state}`);
   if (!row.member_app) throw new FeatureNotInPlanError(`${row.gym_name}'s plan doesn't include the member app yet. Ask the gym.`);
+  if (needsVerification(row)) {
+    const who = inviteIdentity(row);
+    const message = `Enter the 6-digit code we sent to ${who?.masked ?? "your email or phone"}.`;
+    if (!input.verificationCode || !who) throw new ValidationError(message, { verificationCode: [message] });
+    try {
+      await enforce([[RATE_LIMITS.inviteCodeCheckPerInvite, row.invite_id]]);
+    } catch (error) {
+      rateLimited(error, "member.invite_rate_limited", meta, { inviteId: row.invite_id });
+    }
+    if (!verifyInviteCode(row, who.value, input.verificationCode)) {
+      const wrong = "That code is wrong or has expired. Request a new one.";
+      throw new ValidationError(wrong, { verificationCode: [wrong] });
+    }
+  }
 
   let existingUserId: string | null = null;
   let newUserId: string | null = null;
@@ -271,7 +328,17 @@ export async function redeemMemberInvite(input: { token: string; name?: string; 
   let name = input.name?.trim() || row.first_name;
 
   if (row.existing_user_id) {
-    // Linking an existing login: prove it's yours with its current password.
+    // Linking an existing login: prove it's yours with its current password — under the same
+    // per-account limits as signing in, so an invite can't be used to guess passwords.
+    const key = hashIdentifier(inviteIdentity(row)?.value ?? row.invite_id);
+    try {
+      await enforce([
+        [RATE_LIMITS.loginPerEmailIp, key, meta.ip ?? "unknown"],
+        [RATE_LIMITS.loginPerEmail, key],
+      ]);
+    } catch (error) {
+      rateLimited(error, "auth.login_rate_limited", meta, { identifierHash: key });
+    }
     const [user] = await withAnonymous((tx) =>
       row.email ? tx.$queryRaw<LookupRow[]>`SELECT * FROM auth_lookup_user(${row.email})` : tx.$queryRaw<LookupRow[]>`SELECT * FROM auth_lookup_user_by_phone(${row.phone_blind})`
     );

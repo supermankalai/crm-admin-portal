@@ -3,6 +3,7 @@ import { ScrollView, Switch, Text, View } from "react-native";
 import { Card, FormError, ListRow } from "@/components/ui";
 import { authenticate, biometricSupport, type BiometricSupport } from "@/lib/biometrics";
 import { DEFAULT_PREFS, secure, type Prefs } from "@/lib/secure";
+import { applyAppSwitcherProtection } from "@/hooks/use-app-lock";
 
 const TIMEOUTS = [
   { minutes: 0, label: "Immediately" },
@@ -26,6 +27,7 @@ export default function SecurityScreen() {
   const save = async (next: Prefs) => {
     setPrefs(next);
     await secure.setPrefs(next);
+    await applyAppSwitcherProtection(next);
   };
 
   const toggle = async (on: boolean) => {

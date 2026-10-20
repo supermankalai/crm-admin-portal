@@ -17,6 +17,8 @@ const KEYS = {
 export type Prefs = { biometrics: boolean; lockAfterMinutes: number };
 export const DEFAULT_PREFS: Prefs = { biometrics: false, lockAfterMinutes: 5 };
 
+let cachedPrefs: Prefs | null = null;
+
 export const secure = {
   getRefreshToken: () => SecureStore.getItemAsync(KEYS.refreshToken, OPTIONS),
   setRefreshToken: (value: string) => SecureStore.setItemAsync(KEYS.refreshToken, value, OPTIONS),
@@ -28,12 +30,18 @@ export const secure = {
   async getPrefs(): Promise<Prefs> {
     try {
       const raw = await SecureStore.getItemAsync(KEYS.prefs, OPTIONS);
-      return raw ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) } : DEFAULT_PREFS;
+      cachedPrefs = raw ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) } : DEFAULT_PREFS;
     } catch {
-      return DEFAULT_PREFS;
+      cachedPrefs = DEFAULT_PREFS;
     }
+    return cachedPrefs;
   },
-  setPrefs: (prefs: Prefs) => SecureStore.setItemAsync(KEYS.prefs, JSON.stringify(prefs), OPTIONS),
+  async setPrefs(prefs: Prefs) {
+    cachedPrefs = prefs;
+    await SecureStore.setItemAsync(KEYS.prefs, JSON.stringify(prefs), OPTIONS);
+  },
+  /** The last loaded preferences, for decisions that can't wait (locking when the app resumes). */
+  prefsNow: (): Prefs => cachedPrefs ?? DEFAULT_PREFS,
 
   /** Sign-out: remove every credential (prefs are kept — they aren't secret). */
   async clearCredentials() {
