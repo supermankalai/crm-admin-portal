@@ -70,7 +70,7 @@ export default function SecurityScreen() {
           </Card>
         </>
       ) : null}
-      <Text className="px-1 text-sm text-zinc-500 dark:text-zinc-400">Your face or fingerprint never leaves this phone. FitCRM only learns whether the check passed.</Text>
+      <Text className="px-1 text-sm text-zinc-500 dark:text-zinc-400">Your face or fingerprint never leaves this phone. Kangaroo Gym Pilot only learns whether the check passed.</Text>
     </ScrollView>
   );
 }

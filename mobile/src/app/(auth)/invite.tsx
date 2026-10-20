@@ -111,7 +111,7 @@ export default function InviteScreen() {
           </Card>
           {invite.hasAccount ? (
             <>
-              <Text className="text-base text-zinc-600 dark:text-zinc-400">You already have a FitCRM account. Enter its password to connect this membership.</Text>
+              <Text className="text-base text-zinc-600 dark:text-zinc-400">You already have a Kangaroo Gym Pilot account. Enter its password to connect this membership.</Text>
               <Controller
                 control={existingForm.control}
                 name="password"

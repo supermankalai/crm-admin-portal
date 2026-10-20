@@ -1,11 +1,10 @@
 import { useEffect } from "react";
 import { Tabs, useRouter } from "expo-router";
-import * as Notifications from "expo-notifications";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useBrand } from "@/hooks/use-brand";
 import { useSession } from "@/hooks/use-session";
 import { useUnreadCount } from "@/lib/inbox-queries";
-import { firstTimeHandled, gymOfResponse, registerForPush } from "@/lib/push";
+import { firstTimeHandled, gymOfResponse, onAlertTapped, registerForPush, type NotificationResponse } from "@/lib/push";
 import { selectGym, session } from "@/lib/session";
 import { ALL_TABS, routesFor, TAB_META, tabsFor } from "@/nav/tabs";
 
@@ -29,16 +28,14 @@ export default function AppTabs() {
 
   // A tapped alert opens the inbox — of its own gym, switching first if needed.
   useEffect(() => {
-    const open = async (response: Notifications.NotificationResponse | null) => {
-      if (!response || !firstTimeHandled(response)) return;
+    const open = async (response: NotificationResponse) => {
+      if (!firstTimeHandled(response)) return;
       const target = gymOfResponse(response);
       // The payload is untrusted: only switch to a gym this person can actually use.
       if (target && target !== slug && session.getState().gyms.some((g) => g.slug === target && g.appAccess.allowed)) await selectGym(target).catch(() => undefined);
       router.push("/more/notifications");
     };
-    void open(Notifications.getLastNotificationResponse());
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => void open(r));
-    return () => sub.remove();
+    return onAlertTapped((r) => void open(r));
   }, [router, slug]);
   return (
     <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: brand, tabBarLabelStyle: { fontSize: 12 } }}>

@@ -1,5 +1,5 @@
 # Signs in from a clean install. Params: EMAIL, PASSWORD.
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 ---
 - launchApp:
     clearState: true

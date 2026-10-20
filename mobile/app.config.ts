@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 /**
@@ -12,10 +14,31 @@ const APP_ENV = (process.env.APP_ENV ?? "development") as "development" | "stagi
 if (!["development", "staging", "production"].includes(APP_ENV)) throw new Error(`Unknown APP_ENV "${APP_ENV}".`);
 const suffix = APP_ENV === "production" ? "" : `.${APP_ENV === "staging" ? "staging" : "dev"}`;
 const nameSuffix = APP_ENV === "production" ? "" : APP_ENV === "staging" ? " (Staging)" : " (Dev)";
+const androidPackage = `com.kangagympilot.member${suffix}`;
+
+/**
+ * Android push through Firebase: the build includes google-services.json (default
+ * ../firebase/google-services.json, or GOOGLE_SERVICES_JSON) only if it has an Android app for
+ * this build's package. Otherwise the build still works, with push turned off, and says why.
+ * The file holds public client identifiers, not secrets.
+ */
+function googleServicesFor(pkg: string): string | null {
+  const file = path.resolve(__dirname, process.env.GOOGLE_SERVICES_JSON ?? "../firebase/google-services.json");
+  if (!existsSync(file)) return null;
+  try {
+    const json = JSON.parse(readFileSync(file, "utf8")) as { client?: { client_info?: { android_client_info?: { package_name?: string } } }[] };
+    if (json.client?.some((c) => c.client_info?.android_client_info?.package_name === pkg)) return path.relative(__dirname, file).split(path.sep).join("/");
+    console.warn(`[app.config] ${path.basename(file)} has no Android app "${pkg}". Add it in the Firebase console and download the file again; until then this build has no push alerts.`);
+  } catch {
+    console.warn(`[app.config] ${file} isn't valid JSON; this build has no push alerts.`);
+  }
+  return null;
+}
+const googleServicesFile = googleServicesFor(androidPackage);
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: `FitCRM${nameSuffix}`,
+  name: `Kangaroo Gym Pilot${nameSuffix}`,
   // Your Expo account or organisation (set EXPO_OWNER), used by EAS.
   ...(process.env.EXPO_OWNER ? { owner: process.env.EXPO_OWNER } : {}),
   slug: "fitcrm",
@@ -26,7 +49,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: "automatic",
   ios: {
     icon: "./assets/expo.icon",
-    bundleIdentifier: `com.fitcrm.app${suffix}`,
+    bundleIdentifier: `com.kangagympilot.member${suffix}`,
     supportsTablet: true,
     infoPlist: {
       // Production builds talk HTTPS only (no ATS exceptions are added for any environment).
@@ -34,7 +57,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
   },
   android: {
-    package: `com.fitcrm.app${suffix}`,
+    package: androidPackage,
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     adaptiveIcon: {
       backgroundColor: "#FFF4ED",
       foregroundImage: "./assets/images/android-icon-foreground.png",
@@ -68,8 +92,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   experiments: { typedRoutes: true, reactCompiler: true },
   extra: {
     appEnv: APP_ENV,
-    // Expo needs the EAS project id to issue push tokens. Set EAS_PROJECT_ID (from `eas init`,
-    // Phase 7); without it the app works normally, just without push alerts.
-    ...(process.env.EAS_PROJECT_ID ? { eas: { projectId: process.env.EAS_PROJECT_ID } } : {}),
+    // How Android devices get push alerts: "fcm" (Firebase, when this build includes
+    // google-services.json) or "expo" (Expo's push service, needs the EAS project id below).
+    pushTransport: googleServicesFile ? "fcm" : "expo",
+    // The EAS project (from `eas init`): links cloud builds to it and lets Expo issue push tokens.
+    // It's a public identifier, not a secret. EAS_PROJECT_ID overrides it (e.g. for a fork).
+    eas: { projectId: process.env.EAS_PROJECT_ID ?? "7d0a6003-00a5-403c-9bee-b5655f234f02" },
   },
 });

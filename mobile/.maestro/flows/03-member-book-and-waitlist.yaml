@@ -1,6 +1,6 @@
 # A member books an open class, then joins the waitlist of a full one.
 # Uses the "Maestro …" classes from the seed (npm run db:seed resets them).
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 name: Book a class and join a waitlist
 tags: [member]
 ---

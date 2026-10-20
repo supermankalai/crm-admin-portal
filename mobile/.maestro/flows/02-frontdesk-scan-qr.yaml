@@ -2,7 +2,7 @@
 # An emulator can't point a camera at another phone, so the flow fetches the member's live code
 # from the API and enters it in the check-in search, which runs the same lookup and check-in as a
 # camera scan (the code is single-use and expires after 45 s, so it's fetched at the last moment).
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 name: Front desk scans a member's QR code
 tags: [staff]
 env:

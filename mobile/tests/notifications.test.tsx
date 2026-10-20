@@ -74,17 +74,18 @@ describe("alert settings", () => {
   it("shows only this role's categories and saves a switch", async () => {
     mockApi({
       "/me/notification-preferences:GET": {
-        preferences: { classReminders: true, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true },
-        available: ["classReminders", "waitlist", "membership", "payments", "announcements"],
+        preferences: { classReminders: true, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true, training: true },
+        available: ["classReminders", "waitlist", "membership", "payments", "announcements", "training"],
       },
       "/me/notification-preferences:PUT": {
-        preferences: { classReminders: false, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true },
-        available: ["classReminders", "waitlist", "membership", "payments", "announcements"],
+        preferences: { classReminders: false, waitlist: true, membership: true, payments: true, announcements: true, staffAlerts: true, training: true },
+        available: ["classReminders", "waitlist", "membership", "payments", "announcements", "training"],
       },
     });
     const view = await show(<NotificationSettings />);
     expect(await screen.findByLabelText("Class reminders")).toBeTruthy();
     expect(screen.queryByLabelText("Gym alerts")).toBeNull();
+    expect(screen.getByLabelText("Personal training")).toBeTruthy();
     expect(screen.getByLabelText("Turn on alerts")).toBeTruthy();
     await fireEvent(screen.getByLabelText("Class reminders"), "valueChange", false);
     const put = calls("PUT", "/me/notification-preferences");

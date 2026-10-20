@@ -1,5 +1,5 @@
 # A trainer opens a class they're teaching from their schedule and marks a member attended.
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 name: Trainer marks attendance
 tags: [staff]
 ---

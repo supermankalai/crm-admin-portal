@@ -50,7 +50,7 @@ export default function LoginScreen() {
             <Ionicons name="barbell" size={30} color="#fff" />
           </View>
           <Text accessibilityRole="header" className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-            Sign in to FitCRM
+            Sign in to Kangaroo Gym Pilot
           </Text>
           <Text className="text-base text-zinc-600 dark:text-zinc-400">Gym staff, trainers and members.</Text>
         </View>

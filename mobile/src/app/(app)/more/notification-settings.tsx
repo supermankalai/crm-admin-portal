@@ -42,12 +42,12 @@ export default function NotificationSettings() {
       {!available ? (
         <View className="overflow-hidden rounded-2xl">
           <Banner tone="info" icon="information-circle-outline">
-            Phone alerts need the installed FitCRM app (not Expo Go on Android). Everything still appears under Notifications.
+            Phone alerts need the installed Kangaroo Gym Pilot app (not Expo Go on Android). Everything still appears under Notifications.
           </Banner>
         </View>
       ) : permission === "denied" ? (
         <Card className="gap-3">
-          <Text className="text-base text-zinc-800 dark:text-zinc-200">Notifications are turned off for FitCRM in your phone&apos;s settings.</Text>
+          <Text className="text-base text-zinc-800 dark:text-zinc-200">Notifications are turned off for Kangaroo Gym Pilot in your phone&apos;s settings.</Text>
           <Button label="Open phone settings" variant="secondary" icon="settings-outline" onPress={() => Linking.openSettings()} />
         </Card>
       ) : permission === "not-asked" ? (

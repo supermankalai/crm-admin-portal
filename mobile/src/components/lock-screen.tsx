@@ -13,7 +13,7 @@ export function LockScreen() {
 
   const tryUnlock = useCallback(async () => {
     setBusy(true);
-    const ok = await authenticate("Unlock FitCRM");
+    const ok = await authenticate("Unlock Kangaroo Gym Pilot");
     setBusy(false);
     if (ok) await unlocked();
     else setFailed(true);
@@ -26,7 +26,7 @@ export function LockScreen() {
       const support = await biometricSupport();
       if (cancelled) return;
       setLabel(support.label);
-      const ok = await authenticate("Unlock FitCRM");
+      const ok = await authenticate("Unlock Kangaroo Gym Pilot");
       if (cancelled) return;
       if (ok) await unlocked();
       else setFailed(true);
@@ -40,7 +40,7 @@ export function LockScreen() {
     <View accessibilityViewIsModal className="flex-1 items-center justify-center gap-6 bg-white px-8 dark:bg-zinc-950">
       <Ionicons name="lock-closed" size={48} color="#71717a" />
       <Text accessibilityRole="header" className="text-center text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-        FitCRM is locked
+        Kangaroo Gym Pilot is locked
       </Text>
       <Text className="text-center text-base text-zinc-600 dark:text-zinc-400">{failed ? `${label} didn't work. Try again, or sign out and sign in with your password.` : `Use ${label} to continue.`}</Text>
       <View className="w-full gap-3">

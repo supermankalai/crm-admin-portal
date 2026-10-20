@@ -1,5 +1,5 @@
 # A member signs in and sees their membership card with a live check-in QR code.
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 name: Member login and check-in QR
 tags: [member]
 ---

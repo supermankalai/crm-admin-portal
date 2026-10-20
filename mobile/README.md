@@ -46,9 +46,14 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 - A development build has real Face ID and **push alerts on the phone**:
   - in the cloud, with EAS (see **Builds** below);
   - locally, with `npx expo run:android` (needs Android Studio).
-- **Push alerts need two things:** a development or production build (Expo Go on Android can't receive remote push since SDK 53), and `EAS_PROJECT_ID` set when you build (see **Builds** below).
-  - Until then, everything still lands in **More → Notifications**.
-  - To see exactly what a phone *would* show, run `npm run jobs:watch` in the root and open the `.dev-outbox/*.push.json` files.
+- **Push alerts need a development or production build.** Expo Go on Android can't receive remote push since SDK 53. Until then, everything still lands in **More → Notifications**, and `npm run jobs:watch` in the root shows exactly what a phone *would* get in `.dev-outbox/*.push.json`.
+- **Android, through Firebase (no Expo account needed):**
+  1. In the Firebase console (project `kangafit-a7ab4`), add an Android app for each package you build: `com.kangagympilot.member`, `.dev` and `.staging`. Download `google-services.json` into `firebase/` in the repo root (or point `GOOGLE_SERVICES_JSON` at it). The app only uses it if it lists this build's package, and `npx expo config` warns if it doesn't.
+  2. In Firebase, under **Project settings → Service accounts**, generate a private key and save it as `firebase/service-account.json`. It's a secret: git ignores it, and it never goes into the app.
+  3. In the root `.env`, set `PUSH_PROVIDER=live` and `FIREBASE_SERVICE_ACCOUNT_FILE=firebase/service-account.json`.
+  4. Rebuild the app: `npx expo prebuild --clean` once, then `npx expo run:android` with the phone connected by USB.
+  5. Sign in, allow notifications, and keep `npm run jobs:watch` running. Alerts arrive within a minute.
+- **iPhone (and Android without Firebase):** through Expo's push service (the EAS project id is in `app.config.ts`) and `PUSH_PROVIDER=live` on the server.
 
 **Test logins** (from `npm run db:seed` in the root):
 
@@ -99,7 +104,7 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 - **Owners and managers** can read any client's measurements and trainer notes through the API, but never their photos. Their screens for this come with the web portal additions in Phase 6.
 
 **Notifications, announcements and profile to try:**
-- Keep `npm run jobs:watch` running in the root. Every minute it creates reminders and alerts and "sends" push alerts: to `.dev-outbox/*.push.json`, or to real phones with `PUSH_PROVIDER=expo`.
+- Keep `npm run jobs:watch` running in the root. Every minute it creates reminders and alerts and "sends" push alerts: to `.dev-outbox/*.push.json`, or to real phones with `PUSH_PROVIDER=live`.
 - **Member** (`member1@irontemple.example`):
   - **More → Notifications** shows the inbox, already seeded with a class reminder, a waitlist promotion, a payment reminder and announcements. Tap one to open its screen. The More tab shows the unread count.
   - Book a class starting within 2 hours and a class reminder appears on the next run.
@@ -127,17 +132,15 @@ To try an invite:
 
 | Profile | APP_ENV | App | API | Use |
 |---|---|---|---|---|
-| `development` | development | FitCRM (Dev), `com.fitcrm.app.dev` | your PC (from `.env.development(.local)`), plain HTTP allowed | development build: real Face ID, push, Maestro |
+| `development` | development | Kangaroo Gym Pilot (Dev), `com.kangagympilot.member.dev` | your PC (from `.env.development(.local)`), plain HTTP allowed | development build: real Face ID, push, Maestro |
 | `development-simulator` | development | same, iOS simulator build | | |
-| `preview` | staging | FitCRM (Staging), `com.fitcrm.app.staging` | `https://staging.fitcrm.example` (HTTPS only) | testers (internal distribution) |
-| `production` | production | FitCRM, `com.fitcrm.app` | `https://app.fitcrm.example` (HTTPS only) | Play Store / App Store |
+| `preview` | staging | Kangaroo Gym Pilot (Staging), `com.kangagympilot.member.staging` | `https://staging.fitcrm.example` (HTTPS only) | testers (internal distribution) |
+| `production` | production | Kangaroo Gym Pilot, `com.kangagympilot.member` | `https://app.fitcrm.example` (HTTPS only) | Play Store / App Store |
 
 **One-time setup** (needs your Expo account):
-1. Run `npx eas-cli@latest login`, then `npx eas-cli@latest init` in `mobile/`. Note the project id it prints.
-2. Set `EAS_PROJECT_ID` to that id, and `EXPO_OWNER` to your Expo account or organisation:
-   - for local builds, in `mobile/.env.development.local`;
-   - for cloud builds, as EAS environment variables.
-   The id is public (it identifies the project, nothing more). Push tokens need it.
+1. Run `npx eas-cli@latest login` in `mobile/`. (The command is `eas-cli`; `npx eas` doesn't work.)
+2. The project is already linked: its EAS project id (public, not a secret) is in `app.config.ts`. A fork can override it with `EAS_PROJECT_ID`. Set `EXPO_OWNER` only if the project belongs to an Expo organisation rather than your own account.
+   - Cloud builds see only committed files. Upload `firebase/google-services.json` as a file variable: `npx eas-cli@latest env:create --name GOOGLE_SERVICES_JSON --type file --value ../firebase/google-services.json --environment development --visibility plaintext`.
 3. Change the staging and production API URLs in `eas.json` and `.env.staging` / `.env.production` to your real HTTPS addresses.
 
 **Building:**
@@ -146,7 +149,7 @@ To try an invite:
 - `npx eas-cli@latest build --profile production --platform all`, then `npx eas-cli@latest submit`.
 - No EAS account? `npx expo run:android` makes a local development build (needs Android Studio).
 
-**Push alerts from the server:** set `PUSH_PROVIDER=expo` in the root `.env` and run `npm run jobs:watch` (or schedule `npm run jobs:run`).
+**Push alerts from the server:** set `PUSH_PROVIDER=live` in the root `.env` (plus `FIREBASE_SERVICE_ACCOUNT_FILE` for Android phones on Firebase) and run `npm run jobs:watch` (or schedule `npm run jobs:run`). An EAS cloud build includes `firebase/google-services.json` only if it's committed or uploaded as an EAS file variable; the service-account key never is.
 
 ## End-to-end tests (Maestro)
 

@@ -1,5 +1,5 @@
 # One person, member of two gyms: pick a gym, then switch to the other from More.
-appId: com.fitcrm.app.dev
+appId: com.kangagympilot.member.dev
 name: Gym switching
 tags: [member]
 ---
