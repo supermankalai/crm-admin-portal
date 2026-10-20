@@ -10,10 +10,12 @@ import {
   memberSchema,
   membershipIdSchema,
 } from "@/lib/validation/members";
+import { memberAppAccessSchema, memberAppInviteSchema } from "@/lib/validation/announcements";
 import { gymAction, type ActionResult } from "@/server/actions/gym-action";
 import { getRequestMeta } from "@/server/security/request-meta";
 import { addMemberNote, createMember, setMemberPhoto, softDeleteMember, updateMember } from "@/server/services/members/commands";
 import { cancelMembership, freezeMembership, unfreezeMembership } from "@/server/services/members/memberships";
+import { createMemberAppInvite, setMemberAppAccess } from "@/server/services/member-app-invites";
 
 const refresh = (slug: string, memberId?: string) => {
   revalidatePath(`/g/${slug}/members`);
@@ -82,3 +84,17 @@ const uploadPhoto = gymAction({ permission: "members.editContact", schema: photo
 export async function uploadMemberPhotoAction(gymSlug: string, formData: FormData): Promise<ActionResult<{ uploaded: boolean }>> {
   return uploadPhoto(gymSlug, { memberId: formData.get("memberId"), file: formData.get("file") });
 }
+
+// ── Member app ──
+
+export const inviteToAppAction = gymAction({ permission: "members.editContact", schema: memberAppInviteSchema, write: true }, async (ctx, { memberId, channel }) => {
+  const r = await createMemberAppInvite(ctx, memberId, channel, await getRequestMeta());
+  refresh(ctx.gym.slug, memberId);
+  return r;
+});
+
+export const setAppAccessAction = gymAction({ permission: "members.editContact", schema: memberAppAccessSchema, write: true }, async (ctx, { memberId, enabled }) => {
+  const r = await setMemberAppAccess(ctx, memberId, enabled, await getRequestMeta());
+  refresh(ctx.gym.slug, memberId);
+  return r;
+});

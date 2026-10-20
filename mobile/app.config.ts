@@ -48,6 +48,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ["expo-camera", { cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan members' check-in QR codes.", microphonePermission: false, recordAudioAndroid: false }],
     // Progress photos: from the camera or the photo library (no microphone; videos aren't allowed).
     ["expo-image-picker", { photosPermission: "Allow $(PRODUCT_NAME) to choose progress photos from your library.", cameraPermission: "Allow $(PRODUCT_NAME) to take progress photos.", microphonePermission: false }],
+    // Push alerts: Android needs a notification channel and a small monochrome icon.
+    ["expo-notifications", { icon: "./assets/images/android-icon-monochrome.png", color: "#ea580c", defaultChannel: "default" }],
     ["expo-local-authentication", { faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
     [
       "expo-build-properties",
@@ -60,6 +62,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   experiments: { typedRoutes: true, reactCompiler: true },
   extra: {
     appEnv: APP_ENV,
-    // EAS project id goes here after `eas init` (Phase 7).
+    // Expo needs the EAS project id to issue push tokens. Set EAS_PROJECT_ID (from `eas init`,
+    // Phase 7); without it the app works normally, just without push alerts.
+    ...(process.env.EAS_PROJECT_ID ? { eas: { projectId: process.env.EAS_PROJECT_ID } } : {}),
   },
 });

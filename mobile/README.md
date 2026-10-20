@@ -2,13 +2,14 @@
 
 This is the Expo app (SDK 57, React Native 0.86, TypeScript strict) for gym staff, trainers and members. It talks only to the FitCRM backend's mobile API (`/api/mobile/v1`), using the shared contract in [`../packages/shared`](../packages/shared). The design is in [docs/MOBILE_DESIGN.md](../docs/MOBILE_DESIGN.md).
 
-> **Status:** mobile Phase 5 of 7. Done so far:
+> **Status:** mobile Phase 6 of 7. Done so far:
 > - sign-in, biometric lock, gym switching, branding, and tabs by role;
 > - **member features**: the card with a live check-in QR, membership details, class booking and waitlist, attendance history, payments and invoices, **workout plans, marking workouts done, measurements with a chart, and private progress photos**;
 > - **front desk, owner and manager features**: QR check-in scanner, dashboard, member search and profiles, add member, sell memberships, record payments, alerts, and the class overview;
-> - **trainer features**: schedule (classes, PT sessions, shifts), class attendance, clients with progress, photos and private notes, workout plans and templates, and PT session booking.
+> - **trainer features**: schedule (classes, PT sessions, shifts), class attendance, clients with progress, photos and private notes, workout plans and templates, and PT session booking;
+> - **for everyone**: a notification inbox (unread count on the More tab), push alerts with per-category settings, and gym announcements; for members, editing contact details and asking for account deletion.
 >
-> Push notifications and announcements arrive in Phase 6.
+> Phase 7 adds the security review, Maestro end-to-end tests and EAS builds.
 
 ## Running it
 
@@ -42,9 +43,12 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
 - Expo Go (install the version for **SDK 57**) runs everything in this phase, including the camera scanner.
 - **Face ID** is the exception: Expo Go can't use it on iPhone, so the app lock falls back to your passcode there.
 - Fingerprint unlock on Android works in Expo Go.
-- A development build has real Face ID and, from Phase 6, push notifications:
+- A development build has real Face ID and **push alerts on the phone**:
   - in the cloud, with `npx eas-cli@latest build --profile development` (set up in Phase 7);
   - locally, with `npx expo run:android` (needs Android Studio).
+- **Push alerts need two things:** a development or production build (Expo Go on Android can't receive remote push since SDK 53), and `EAS_PROJECT_ID` set when you build. Both come in Phase 7.
+  - Until then, everything still lands in **More → Notifications**.
+  - To see exactly what a phone *would* show, run `npm run jobs:watch` in the root and open the `.dev-outbox/*.push.json` files.
 
 **Test logins** (from `npm run db:seed` in the root):
 
@@ -93,6 +97,21 @@ npx expo start         # scan the QR code with Expo Go (Android) or the Camera a
   - **Progress**: *Log measurements* (weight, body fat, chest, waist, hips, arm, thigh). Tap an entry to edit or delete it. The chart switches between measurements; press and drag to read the values.
   - **Photo**: take or choose a progress photo. Its location and other metadata are removed, and only you and your trainers can see it. Screenshots are blocked in the photo viewer.
 - **Owners and managers** can read any client's measurements and trainer notes through the API, but never their photos. Their screens for this come with the web portal additions in Phase 6.
+
+**Notifications, announcements and profile to try:**
+- Keep `npm run jobs:watch` running in the root. Every minute it creates reminders and alerts and "sends" push alerts: to `.dev-outbox/*.push.json`, or to real phones with `PUSH_PROVIDER=expo`.
+- **Member** (`member1@irontemple.example`):
+  - **More → Notifications** shows the inbox, already seeded with a class reminder, a waitlist promotion, a payment reminder and announcements. Tap one to open its screen. The More tab shows the unread count.
+  - Book a class starting within 2 hours and a class reminder appears on the next run.
+  - **More → Alerts on this phone:** turn categories on or off. *Turn on alerts* asks for permission (in a development build).
+  - **More → Announcements:** news from the gym.
+  - **More → My details:** edit your phone, email, address and emergency contact.
+  - **Delete my account** sends a request. The gym handles it on the web under Members → *1 deletion request*.
+- **Owner on the web** (`owner@irontemple.example`):
+  - **Announcements** in the side menu: publish one to members and it appears in the app straight away. The next jobs run pushes its title.
+  - **Members → a member → Member app:** invite by email, SMS or a front-desk code, or turn their app access off.
+  - **Workout plans** in the side menu: every trainer's plans, templates, editing and giving plans to clients.
+- **Waitlist:** sign in as two members. Fill a class with the first and join its waitlist with the second. When the first cancels, the second gets "You're in!".
 
 To try an invite, tap *I have an invite from my gym* and enter `WELC-OME2`.
 

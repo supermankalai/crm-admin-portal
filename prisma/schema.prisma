@@ -128,6 +128,12 @@ enum NotificationType {
   PLAN_LIMIT_NEAR
   SUBSCRIPTION_EXPIRING
   SYSTEM
+  CLASS_REMINDER
+  WAITLIST_PROMOTED
+  PAYMENT_DUE
+  ANNOUNCEMENT
+  CLASS_FULL
+  DELETION_REQUEST
 }
 
 enum FileKind {
@@ -160,13 +166,16 @@ model User {
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
-  staff          StaffMember[]
-  memberAccounts MemberAccount[]
-  deviceSessions MobileDeviceSession[]
-  loginOtps      LoginOtp[]
-  resetTokens    PasswordResetToken[]
-  notifications  Notification[]
-  supportAccess  SupportAccessSession[]
+  staff             StaffMember[]
+  memberAccounts    MemberAccount[]
+  deviceSessions    MobileDeviceSession[]
+  loginOtps         LoginOtp[]
+  resetTokens       PasswordResetToken[]
+  notifications     Notification[]
+  supportAccess     SupportAccessSession[]
+  pushTokens        PushToken[]
+  notificationPrefs NotificationPreference[]
+  deletionRequests  AccountDeletionRequest[]
 }
 
 model PasswordResetToken {
@@ -265,6 +274,10 @@ model Gym {
   progressPhotos      ProgressPhoto[]
   trainerClientNotes  TrainerClientNote[]
   trainingSessions    TrainingSession[]
+  pushTokens          PushToken[]
+  notificationPrefs   NotificationPreference[]
+  announcements       Announcement[]
+  deletionRequests    AccountDeletionRequest[]
 }
 
 model GymSubscription {
@@ -386,6 +399,8 @@ model StaffMember {
   workoutPlans     WorkoutPlan[]
   clientNotes      TrainerClientNote[]
   trainingSessions TrainingSession[]
+  announcements    Announcement[]
+  deletionsHandled AccountDeletionRequest[]
 
   @@unique([gymId, id])
   @@unique([gymId, userId])
@@ -544,8 +559,8 @@ model Member {
   createdAt           DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
 
-  gym                Gym                 @relation(fields: [gymId], references: [id])
-  photo              FileAsset?          @relation(fields: [gymId, photoFileId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  gym                Gym                      @relation(fields: [gymId], references: [id])
+  photo              FileAsset?               @relation(fields: [gymId, photoFileId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
   notes              MemberNote[]
   memberships        Membership[]
   invoices           Invoice[]
@@ -561,6 +576,7 @@ model Member {
   progressPhotos     ProgressPhoto[]
   trainerNotes       TrainerClientNote[]
   trainingSessions   TrainingSession[]
+  deletionRequests   AccountDeletionRequest[]
 
   @@unique([gymId, id])
   @@unique([gymId, memberNumber])
@@ -822,13 +838,17 @@ model Notification {
   entityId        String?
   dedupeKey       String
   readAt          DateTime?        @db.Timestamptz(3)
+  /// When the push job handled this notification (sent, or skipped by preference / no device).
+  pushedAt        DateTime?        @db.Timestamptz(3)
   createdAt       DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
 
-  gym       Gym  @relation(fields: [gymId], references: [id])
-  recipient User @relation(fields: [recipientUserId], references: [id])
+  gym        Gym            @relation(fields: [gymId], references: [id])
+  recipient  User           @relation(fields: [recipientUserId], references: [id])
+  deliveries PushDelivery[]
 
   @@unique([gymId, dedupeKey])
+  @@index([pushedAt, createdAt])
   @@index([gymId, recipientUserId, readAt])
 }
 
@@ -971,6 +991,7 @@ model MobileDeviceSession {
 
   user          User                 @relation(fields: [userId], references: [id])
   refreshTokens MobileRefreshToken[]
+  pushTokens    PushToken[]
 
   @@index([userId, revokedAt])
 }
@@ -1158,4 +1179,122 @@ model TrainingSession {
 
   @@index([gymId, trainerId, startsAt])
   @@index([gymId, memberId, startsAt])
+}
+
+// ─────────────────────────── Push, announcements, account deletion (mobile Phase 6) ───────────────────────────
+
+enum AnnouncementAudience {
+  EVERYONE
+  MEMBERS
+  STAFF
+}
+
+enum DeletionRequestStatus {
+  REQUESTED
+  COMPLETED
+  REJECTED
+}
+
+/// An Expo push token for one signed-in device in one gym. Removed on logout; marked invalid
+/// when Expo reports the device is no longer registered.
+model PushToken {
+  id              String    @id @default(cuid(2))
+  gymId           String
+  userId          String
+  deviceSessionId String
+  token           String
+  platform        String
+  invalidatedAt   DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym           Gym                 @relation(fields: [gymId], references: [id])
+  user          User                @relation(fields: [userId], references: [id])
+  deviceSession MobileDeviceSession @relation(fields: [deviceSessionId], references: [id], onDelete: Cascade)
+  deliveries    PushDelivery[]
+
+  @@unique([gymId, deviceSessionId])
+  @@index([gymId, userId])
+  @@index([token])
+}
+
+/// Which push alerts a person wants from one gym. The in-app list always keeps everything.
+model NotificationPreference {
+  id             String   @id @default(cuid(2))
+  gymId          String
+  userId         String
+  classReminders Boolean  @default(true)
+  waitlist       Boolean  @default(true)
+  membership     Boolean  @default(true)
+  payments       Boolean  @default(true)
+  announcements  Boolean  @default(true)
+  staffAlerts    Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  gym  Gym  @relation(fields: [gymId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([gymId, userId])
+}
+
+/// A message from the gym to its members and/or staff. Gym-public text: not encrypted.
+model Announcement {
+  id          String               @id @default(cuid(2))
+  gymId       String
+  title       String
+  body        String
+  audience    AnnouncementAudience
+  createdById String
+  publishedAt DateTime             @default(now()) @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  createdBy StaffMember @relation(fields: [gymId, createdById], references: [gymId, id])
+
+  @@index([gymId, publishedAt])
+}
+
+/// One push attempt for one notification on one device. Written only by the push job (owner role).
+model PushDelivery {
+  id               String    @id @default(cuid(2))
+  notificationId   String
+  pushTokenId      String
+  ticketId         String?
+  /// SENT (ticket received), DELIVERED (receipt ok) or ERROR.
+  status           String
+  error            String?
+  receiptCheckedAt DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  pushToken    PushToken    @relation(fields: [pushTokenId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, pushTokenId])
+  @@index([status, receiptCheckedAt, createdAt])
+}
+
+/// A member asks the gym to delete their app account and personal data. Staff complete it
+/// (anonymise, disable the account, erase fitness data) or reject it; both are audited.
+model AccountDeletionRequest {
+  id             String                @id @default(cuid(2))
+  gymId          String
+  memberId       String
+  userId         String
+  reasonEnc      String?
+  status         DeletionRequestStatus @default(REQUESTED)
+  resolvedAt     DateTime?             @db.Timestamptz(3)
+  resolvedById   String?
+  resolutionNote String?
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+
+  gym        Gym          @relation(fields: [gymId], references: [id])
+  member     Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  user       User         @relation(fields: [userId], references: [id])
+  resolvedBy StaffMember? @relation(fields: [gymId, resolvedById], references: [gymId, id])
+
+  @@index([gymId, status, createdAt])
 }

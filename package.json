@@ -23,7 +23,8 @@
     "crypto:rotate": "tsx scripts/crypto-rotate.ts",
     "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts",
     "openapi:generate": "tsx scripts/openapi.ts",
-    "dev:lan": "next dev -H 0.0.0.0"
+    "dev:lan": "next dev -H 0.0.0.0",
+    "jobs:watch": "tsx --conditions=react-server scripts/jobs-run.ts --watch"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

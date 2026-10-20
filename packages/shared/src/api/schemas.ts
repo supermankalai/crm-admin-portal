@@ -606,3 +606,73 @@ export const photoUploadedResponseSchema = progressPhotoItemSchema;
 export const memberTrainingSessionsResponseSchema = z.object({ sessions: z.array(trainingSessionItemSchema) });
 export const trainingSessionCreatedResponseSchema = z.object({ id: z.string() });
 export const attendanceResponseSchema = z.object({ status: z.enum(["ATTENDED", "NO_SHOW"]) });
+
+// ─────────────────────────────── Notifications, announcements, profile ───────────────────────────────
+
+export const notificationTypeSchema = z.enum([
+  "MEMBERSHIP_EXPIRING",
+  "PAYMENT_OVERDUE",
+  "PLAN_LIMIT_NEAR",
+  "SUBSCRIPTION_EXPIRING",
+  "SYSTEM",
+  "CLASS_REMINDER",
+  "WAITLIST_PROMOTED",
+  "PAYMENT_DUE",
+  "ANNOUNCEMENT",
+  "CLASS_FULL",
+  "DELETION_REQUEST",
+]);
+
+export const notificationIdParamsSchema = z.object({ notificationId: z.string().min(1).max(64) });
+
+export const notificationItemSchema = z.object({
+  id: z.string(),
+  type: notificationTypeSchema,
+  title: z.string(),
+  body: z.string(),
+  /** Where tapping it should go in the app (screen key), if anywhere. */
+  target: z.enum(["classes", "membership", "payments", "announcements", "alerts", "members"]).nullable(),
+  readAt: isoDateTime.nullable(),
+  createdAt: isoDateTime,
+});
+
+export const notificationsResponseSchema = z.object({ items: z.array(notificationItemSchema), nextCursor: z.string().nullable(), unread: z.number().int() });
+export const markedResponseSchema = z.object({ marked: z.number().int() });
+
+export const preferencesSchema = z.object({
+  classReminders: z.boolean(),
+  waitlist: z.boolean(),
+  membership: z.boolean(),
+  payments: z.boolean(),
+  announcements: z.boolean(),
+  staffAlerts: z.boolean(),
+});
+export const preferencesResponseSchema = z.object({ preferences: preferencesSchema, available: z.array(preferencesSchema.keyof()) });
+export const updatePreferencesSchema = preferencesSchema.partial();
+
+export const pushTokenRequestSchema = z.object({
+  token: z.string().regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/, "Not an Expo push token"),
+  platform: z.enum(["ios", "android"]),
+});
+
+export const announcementItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  body: z.string(),
+  audience: z.enum(["EVERYONE", "MEMBERS", "STAFF"]),
+  publishedAt: isoDateTime,
+});
+export const announcementsResponseSchema = z.object({ items: z.array(announcementItemSchema) });
+
+export const memberProfileResponseSchema = z.object({
+  name: z.string(),
+  memberNumber: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  address: z.string().nullable(),
+  emergencyContact: z.object({ name: z.string().nullable(), phone: z.string().nullable(), relation: z.string().nullable() }).nullable(),
+  deletionRequest: z.object({ status: z.enum(["REQUESTED", "COMPLETED", "REJECTED"]), requestedAt: isoDateTime, note: z.string().nullable() }).nullable(),
+});
+
+export const deletionRequestSchema = z.object({ reason: z.string().trim().max(500).transform((v) => (v === "" ? null : v)), confirm: z.literal(true, "Please confirm you understand") });
+export const deletionRequestResponseSchema = z.object({ status: z.literal("REQUESTED"), requestedAt: isoDateTime });

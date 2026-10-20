@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/screen";
 import { Card, ListRow, Skeleton } from "@/components/ui";
 import { useSession } from "@/hooks/use-session";
+import { useUnreadCount } from "@/lib/inbox-queries";
 import { api, leaveGym, signOut, updateGyms } from "@/lib/session";
 
 export default function MoreScreen() {
@@ -18,6 +19,7 @@ export default function MoreScreen() {
     },
   });
   const canSwitch = gyms.filter((g) => g.appAccess.allowed).length > 1;
+  const unread = useUnreadCount();
 
   return (
     <Screen title="More" onRefresh={() => me.refetch()}>
@@ -38,8 +40,20 @@ export default function MoreScreen() {
         )}
       </Card>
 
+      <Card className="p-0">
+        <ListRow
+          icon="notifications-outline"
+          title="Notifications"
+          subtitle={unread ? (unread === 1 ? "1 unread" : `${unread} unread`) : "Reminders, waitlist news and alerts"}
+          onPress={() => router.push("/more/notifications")}
+        />
+        <ListRow icon="megaphone-outline" title="Announcements" subtitle={`News from ${gym?.name ?? "your gym"}`} onPress={() => router.push("/more/announcements")} />
+        <ListRow icon="options-outline" title="Alerts on this phone" subtitle="Choose what you're notified about" onPress={() => router.push("/more/notification-settings")} />
+      </Card>
+
       {gym?.role === "MEMBER" ? (
         <Card className="p-0">
+          <ListRow icon="person-circle-outline" title="My details" subtitle="Contact details and emergency contact" onPress={() => router.push("/more/profile")} />
           <ListRow icon="card-outline" title="My membership" subtitle="Plan, dates, freeze and credits" onPress={() => router.push("/card/membership")} />
           <ListRow icon="footsteps-outline" title="Attendance" subtitle="Your check-in history" onPress={() => router.push("/more/attendance")} />
           <ListRow icon="wallet-outline" title="Payments & invoices" onPress={() => router.push("/more/payments")} />

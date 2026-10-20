@@ -13,9 +13,11 @@ import { useSession } from "@/hooks/use-session";
 import { apiConfig } from "@/lib/config";
 import { clearAllCaches, connectQueryToDevice, forgetGym, persister, queryClient, shouldPersist } from "@/lib/query";
 import { secure } from "@/lib/secure";
+import { configurePushHandling } from "@/lib/push";
 import { bootstrap, session } from "@/lib/session";
 
 void SplashScreen.preventAutoHideAsync();
+configurePushHandling();
 
 // Wipe caches on sign-out/revocation; drop a gym's cached data when leaving it.
 session.onReset(clearAllCaches);

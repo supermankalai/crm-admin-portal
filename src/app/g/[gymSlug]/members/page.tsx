@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Search, Users } from "lucide-react";
+import { Plus, Search, Users, UserX } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { MEMBER_STATUS_FILTERS, type MemberStatusFilter } from "@/lib/validation/members";
 import { listMembers, MEMBER_SORTS, type MemberSort } from "@/server/services/members/list";
+import { openDeletionRequestCount } from "@/server/services/deletion-requests";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { MembersTable } from "./members-table";
 
@@ -31,6 +32,7 @@ export default async function MembersPage({ params, searchParams }: { params: Pr
   const ownOnly = !hasPermission(ctx, "members.viewAll");
   const canCreate = hasPermission(ctx, "members.create") && ctx.access.writable && !ctx.supportSessionId;
   const base = `/g/${ctx.gym.slug}/members`;
+  const deletionRequests = await openDeletionRequestCount(ctx);
 
   return (
     <>
@@ -38,13 +40,22 @@ export default async function MembersPage({ params, searchParams }: { params: Pr
         title={ownOnly ? "My clients" : "Members"}
         description={ownOnly ? "Members assigned to you as their trainer." : "Search by name, member number (M-000123), email or full phone number."}
         actions={
-          canCreate && (
-            <Button asChild>
-              <Link href={`${base}/new`}>
-                <Plus aria-hidden /> Add member
-              </Link>
-            </Button>
-          )
+          <>
+            {deletionRequests > 0 && (
+              <Button asChild variant="outline">
+                <Link href={`/g/${ctx.gym.slug}/deletion-requests`}>
+                  <UserX aria-hidden /> {deletionRequests === 1 ? "1 deletion request" : `${deletionRequests} deletion requests`}
+                </Link>
+              </Button>
+            )}
+            {canCreate && (
+              <Button asChild>
+                <Link href={`${base}/new`}>
+                  <Plus aria-hidden /> Add member
+                </Link>
+              </Button>
+            )}
+          </>
         }
       />
       <Card className="gap-0 py-0">

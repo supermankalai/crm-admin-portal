@@ -229,3 +229,39 @@ export async function completeWorkout(ctx: MemberContext, dayId: string, note: s
 export function completionNote(gymId: string, id: string, noteEnc: string | null) {
   return tryDecrypt(noteEnc, completionCrypto(gymId, id));
 }
+
+// ─────────────────────────────── Web portal ───────────────────────────────
+
+/**
+ * Plans for the web portal's workout page. Managers and owners see every plan in the gym (RLS);
+ * trainers see their own and their clients'.
+ */
+export async function listGymPlans(ctx: TenantContext, filters: { status?: "DRAFT" | "ACTIVE" | "ARCHIVED"; trainerId?: string }) {
+  coach(ctx);
+  return inTenant(ctx, async (tx) => {
+    const rows = await tx.workoutPlan.findMany({
+      where: { ...(filters.status ? { status: filters.status } : {}), ...(filters.trainerId ? { trainerId: filters.trainerId } : {}) },
+      orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+      take: 200,
+      select: { ...ROW_SELECT, trainerId: true, trainer: { select: { user: { select: { name: true } } } } },
+    });
+    const trainers = await tx.staffMember.findMany({ where: { status: "ACTIVE", role: { in: ["TRAINER", "MANAGER", "OWNER"] } }, select: { id: true, user: { select: { name: true } } } });
+    return {
+      plans: rows.map((p) => ({ ...planRow(p), trainer: p.trainer.user.name, trainerId: p.trainerId })),
+      trainers: trainers.map((t) => ({ id: t.id, name: t.user.name })).sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
+}
+
+export async function setPlanStatus(ctx: TenantContext, planId: string, status: "DRAFT" | "ACTIVE" | "ARCHIVED", meta: RequestMeta) {
+  const c = coach(ctx);
+  assertWritable(ctx);
+  return inTenant(ctx, async (tx) => {
+    const plan = await tx.workoutPlan.findFirst({ where: { id: planId }, select: { id: true, trainerId: true } });
+    if (!plan) throw new NotFoundError("Plan not found.");
+    if (!c.isManager && plan.trainerId !== c.staffId) throw new ForbiddenError("Only the trainer who wrote this plan can change it.");
+    await tx.workoutPlan.update({ where: { id: planId }, data: { status }, select: { id: true } });
+    await recordAudit(tx, ctx, { action: "workout_plan.status", entityType: "WorkoutPlan", entityId: planId, changes: { status } }, meta);
+    return { status };
+  });
+}

@@ -52,3 +52,10 @@ REVOKE DELETE ON "gym-admin-portal"."MemberAccount" FROM gym_app;
 
 -- Personal training sessions are cancelled (status), never deleted.
 REVOKE DELETE ON "gym-admin-portal"."TrainingSession" FROM gym_app;
+
+-- Push deliveries are written and read only by the push job (owner role).
+REVOKE ALL ON "gym-admin-portal"."PushDelivery" FROM gym_app;
+
+-- Announcements are never edited after publishing; deletion requests are never deleted.
+REVOKE UPDATE ON "gym-admin-portal"."Announcement" FROM gym_app;
+REVOKE DELETE ON "gym-admin-portal"."AccountDeletionRequest" FROM gym_app;

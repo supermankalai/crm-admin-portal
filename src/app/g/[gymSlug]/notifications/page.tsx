@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, BellOff, CalendarClock, CreditCard, Gauge, Info } from "lucide-react";
+import { AlertTriangle, BellOff, CalendarClock, CreditCard, Gauge, Info, Megaphone, UserX, Users, type LucideIcon } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
@@ -7,6 +7,7 @@ import { LinkTabs } from "@/components/link-tabs";
 import { Pagination } from "@/components/pagination";
 import { Card } from "@/components/ui/card";
 import { formatDateTime } from "@/domain/dates";
+import type { NotificationType } from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 import { listNotifications, refreshNotifications } from "@/server/services/notifications";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
@@ -14,13 +15,20 @@ import { MarkAllRead, OpenNotification } from "./notification-actions";
 
 export const metadata: Metadata = { title: "Notifications" };
 
-const ICON = {
+const ICON: Record<NotificationType, LucideIcon> = {
   MEMBERSHIP_EXPIRING: CalendarClock,
   PAYMENT_OVERDUE: CreditCard,
   PLAN_LIMIT_NEAR: Gauge,
   SUBSCRIPTION_EXPIRING: AlertTriangle,
   SYSTEM: Info,
-} as const;
+  CLASS_FULL: Users,
+  ANNOUNCEMENT: Megaphone,
+  DELETION_REQUEST: UserX,
+  // Member-only kinds (never sent to staff), mapped for completeness.
+  CLASS_REMINDER: CalendarClock,
+  WAITLIST_PROMOTED: Users,
+  PAYMENT_DUE: CreditCard,
+};
 
 export default async function NotificationsPage({ params, searchParams }: { params: Promise<{ gymSlug: string }>; searchParams: Promise<{ view?: string; page?: string }> }) {
   const ctx = await requireGymAccess((await params).gymSlug);

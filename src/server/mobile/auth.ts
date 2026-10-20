@@ -418,6 +418,8 @@ export async function listDevices(userId: string, currentSessionId: string) {
 export async function revokeDevice(userId: string, sessionId: string, reason: "logout" | "user_revoked", meta: RequestMeta) {
   const changed = await withUser(userId, async (tx) => {
     const r = await tx.mobileDeviceSession.updateMany({ where: { id: sessionId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokeReason: reason } });
+    // No more push alerts to a signed-out device, from any gym.
+    await tx.pushToken.deleteMany({ where: { userId, deviceSessionId: sessionId } });
     if (r.count) await recordPlatformAudit(tx, { action: reason === "logout" ? "auth.logout" : "mobile.device_revoked", actorUserId: userId, metadata: { channel: "mobile", deviceSessionId: sessionId }, meta });
     return r.count;
   });

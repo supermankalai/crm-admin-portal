@@ -2,7 +2,7 @@
 
 One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
 
-> **Build status: all 8 web phases complete. Mobile app: Phase 5 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos). See [mobile/README.md](mobile/README.md).**
+> **Build status: all 8 web phases complete. Mobile app: Phase 5 of 7 done (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos; push notifications, inbox and alert settings, announcements, profile editing and account deletion, plus web pages for announcements, member app invites, deletion requests and workout plans). See [mobile/README.md](mobile/README.md).**
 > - **Phase 1:** database roles, RLS, encryption, seed, login
 > - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
 > - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
@@ -77,6 +77,7 @@ All variables are validated with Zod at startup ([src/server/env.ts](src/server/
 | `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-account limits are fixed: 5 login attempts per 15 minutes from one IP and 20 from all IPs combined. |
 | `MOBILE_SECRET` | ✓ | 32 random bytes (base64). Separate keys are derived from it for mobile access tokens, one-time codes, QR codes and signed file URLs. |
 | `SMS_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | — | `dev-outbox` (default) or `twilio`; the Twilio values are required when `twilio` is chosen |
+| `PUSH_PROVIDER`, `EXPO_ACCESS_TOKEN` | — | `dev-outbox` (default: pushes are written to `.dev-outbox/*.push.json`) or `expo` (real phones). The token is needed only if your Expo project has enhanced push security on |
 | `TRUSTED_PROXY_HOPS` | — | How many reverse proxies in front of the app append to `X-Forwarded-For` (default `1`). The client IP is read that many entries from the right; anything further left is client-supplied and ignored. |
 
 `.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
@@ -131,7 +132,7 @@ Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms 
 - Destructive actions need a reason and a confirmation.
 - Each change runs in one transaction: it locks the subscription row, updates the gym and subscription, appends `SubscriptionHistory`, and writes a platform audit entry.
 - The rules are pure functions in [src/domain/subscription-changes.ts](src/domain/subscription-changes.ts). Persistence sits behind a `BillingProvider` interface ([src/server/billing](src/server/billing)), so a Stripe provider can plug in later and reuse the same history, audit and read-only behaviour.
-- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, clears stale rate-limit buckets and generates in-app alerts for every gym (it runs with `--conditions=react-server` so the shared server modules load in a script). Read-only mode doesn't depend on it.
+- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, clears stale rate-limit buckets, generates in-app alerts and member reminders for every gym, and sends push alerts (`npm run jobs:watch` repeats it every minute while you test) (it runs with `--conditions=react-server` so the shared server modules load in a script). Read-only mode doesn't depend on it.
 
 **Plan limits and feature flags.**
 - `assertWithinLimit()` and `assertFeature()` run on the server before members, staff or locations are created, and before reports or exports. The UI shows upgrade messages such as *"Your Starter plan includes up to 150 members, and you've reached it. Upgrade your plan to add more."*
@@ -365,6 +366,9 @@ Each gym also gets:
 | `member1@pulsefitness.example` … `member20@pulsefitness.example` | `Member#2026` | pulse-fitness (Starter: **no** member app) | to see the "not in your plan" path |
 | `alex.member@fitcrm.example` | `Member#2026` | iron-temple **and** zen-strength | one person, member of two gyms (gym switching) |
 | `+919800000022` (phone only, no email) | `Member#2026` | iron-temple | one-time code by SMS (dev: `.dev-outbox/*.sms.txt`) |
+| `member2@<gym>` | `Member#2026` | each gym | has class-reminder alerts turned off |
+| `member19@irontemple.example` | `Member#2026` | iron-temple | has asked for account deletion (web: Members → *1 deletion request*) |
+| `member18@pulsefitness.example` | `Member#2026` | pulse-fitness | deletion request rejected by the gym, with a note |
 
 Pending member app invites at Iron Temple, to try the invite flow:
 - **Front-desk code** `WELC-OME2`, for member #23.
@@ -444,6 +448,36 @@ curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessTo
   - Trainer notes are visible to their author and managers, never the member.
 - **Encryption:** measurements, plan notes, workout notes and trainer notes are encrypted.
 - **Photos** are re-encoded on upload, which removes location and other metadata, and are served only through 5-minute signed links (`/api/mobile/v1/progress-photos/{id}`). Uploads are `multipart/form-data`.
+
+**Notifications, announcements and profile** (`/notifications`, `/announcements`, `/me/push-token`, `/me/notification-preferences`, `/member/profile`, `/member/deletion-request`):
+- **Inbox:** every person (staff or member) sees and marks read only their own notifications. Row-level security now has member policies too.
+- **What members are told about:**
+  - a class they booked starts within 2 hours;
+  - a waitlist spot opened and they were booked in;
+  - their membership ends within 7 days;
+  - a payment is due within 3 days, or is overdue;
+  - gym announcements.
+- **What staff are told about:** a class in the next 24 hours is full, and a member asked for account deletion (owners and managers). The existing alerts stay as they were.
+- **Push:**
+  - The jobs process sends push alerts from inbox rows through Expo, as the database owner. It's the only code that can read everyone's device tokens.
+  - Lock-screen text is generic: "You have a payment due. Open the app for details." No names, amounts, invoice numbers or class names. Announcements show their title.
+  - Preferences switch off push per category; the inbox keeps everything.
+  - Tokens are one per device per gym, removed on sign-out, and ignored once the device session is revoked.
+  - Expo's receipts mark devices that are no longer registered, so they aren't sent to again.
+- **Profile:**
+  - Members update their contact details and emergency contact through a narrow security-definer function. The app server encrypts the values first.
+  - The change is audited as the member, recording field names only.
+- **Deletion:**
+  - A member's request alerts owners and managers. They complete it on the web (Members → Deletion requests) or reject it with a note.
+  - Completing anonymises the member and disables their app account.
+  - It erases their measurements, progress photos (with the files), workouts, trainer notes, inbox and devices for that gym.
+  - Invoices, payments and visit records are kept, without the name.
+
+**Web portal additions:**
+- **Announcements** (owners and managers): publish to members, staff or both.
+- **Member app panel** on each member's profile: invite by email, SMS or a one-time front-desk code, see whether they use the app, and turn their access off or on.
+- **Deletion requests** (owners and managers).
+- **Workout plans:** managers see every trainer's plans; trainers see their own. Filter, write templates, edit days and exercises, activate or archive, and give a plan to a client.
 
 **Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
 
@@ -549,7 +583,8 @@ docs/DESIGN.md       approved architecture
 Before going live:
 - Run behind a reverse proxy that terminates TLS and **appends** the client address to `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies, and `APP_URL` to the `https://` address.
 - Keep `ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` and `AUTH_SECRET` in a secrets manager (or a KMS), never in the repository or next to backups. Rotate keys with `npm run crypto:rotate`.
-- Schedule `npm run jobs:run` every few minutes. It expires subscriptions, cleans up rate-limit buckets and generates alerts.
+- Schedule `npm run jobs:run` every few minutes. It expires subscriptions, cleans up rate-limit buckets, generates alerts and reminders, and sends push alerts.
+- For push, set `PUSH_PROVIDER=expo`, and build the app with `EAS_PROJECT_ID` set (Phase 7).
 - Schedule backups and test restores (§8).
 - Ship logs to a central store and alert on `error` entries.
 - Point `STORAGE_DIR` at durable, backed-up storage, or implement the `StorageProvider` interface for S3 or GCS.

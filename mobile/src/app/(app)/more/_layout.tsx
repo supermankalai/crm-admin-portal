@@ -10,6 +10,11 @@ export default function MoreLayout() {
       <Stack.Screen name="attendance" options={{ title: "Attendance" }} />
       <Stack.Screen name="payments" options={{ title: "Payments & invoices" }} />
       <Stack.Screen name="invoice/[invoiceId]" options={{ title: "Invoice" }} />
+      <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
+      <Stack.Screen name="notification-settings" options={{ title: "Alerts on this phone" }} />
+      <Stack.Screen name="announcements" options={{ title: "Announcements" }} />
+      <Stack.Screen name="profile" options={{ title: "My details" }} />
+      <Stack.Screen name="delete-account" options={{ title: "Delete my account", presentation: "modal" }} />
     </Stack>
   );
 }

@@ -60,6 +60,9 @@ export type MemberFormValues = z.input<typeof memberSchema>;
 
 export const memberUpdateSchema = memberSchema.extend({ memberId: z.string().min(1).max(64) });
 export const memberContactUpdateSchema = z.object({ memberId: z.string().min(1).max(64), ...memberContactFields });
+/** A member updating their own contact details in the app. */
+export const memberContactSelfSchema = z.object(memberContactFields);
+export type MemberContactFormValues = z.input<typeof memberContactSelfSchema>;
 
 export const memberIdSchema = z.object({ memberId: z.string().min(1).max(64) });
 

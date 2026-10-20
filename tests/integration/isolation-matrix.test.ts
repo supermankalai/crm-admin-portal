@@ -38,10 +38,11 @@ const REJECTED = /row-level security|permission denied|cannot be changed|append-
 
 /**
  * Tables where even the gym's owner deliberately can't read all of the gym's own rows:
- * notifications are per recipient; progress photos are private to the member and their assigned
- * trainers (mobile decision 4). Cross-gym isolation is still checked for them like every table.
+ * notifications, push tokens and push preferences are per person; progress photos are private to
+ * the member and their assigned trainers (mobile decision 4). Cross-gym isolation is still checked
+ * for them like every table.
  */
-const NOT_ALL_VISIBLE_TO_OWNER = ["Notification", "ProgressPhoto"];
+const NOT_ALL_VISIBLE_TO_OWNER = ["Notification", "ProgressPhoto", "PushToken", "NotificationPreference"];
 
 /** Tables that carry a gymId but are platform-level, with their own (tested) policies. */
 const PLATFORM_TABLES = ["PlatformAuditLog", "GymSubscription", "SupportAccessSession"];
@@ -137,8 +138,9 @@ describe("the seed gives every table data in both gyms", () => {
       const [{ n }] = await getOwnerDb().$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM ${q(t)} WHERE "gymId" = $1`, B().id);
       if (n === 0) empty.push(t);
     }
-    // Pulse has no pending staff or member-app invitations or uploads in the seed; every other table has rows.
-    expect(empty.filter((t) => !["StaffInvitation", "FileAsset", "MemberAppInvite"].includes(t))).toEqual([]);
+    // Pulse has no pending staff or member-app invitations, uploads or registered phones (push
+    // tokens) in the seed; every other table has rows.
+    expect(empty.filter((t) => !["StaffInvitation", "FileAsset", "MemberAppInvite", "PushToken"].includes(t))).toEqual([]);
   });
 });
 

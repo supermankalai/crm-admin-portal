@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { memberSchema } from "../validation/members";
+import { memberContactSelfSchema, memberSchema } from "../validation/members";
 import { assignPlanSchema, attendanceSchema, completeWorkoutSchema, createWorkoutPlanSchema, progressEntrySchema, progressPhotoSchema, trainerNoteSchema, trainingSessionSchema, trainingSessionUpdateSchema, workoutPlanSchema } from "../validation/fitness";
 import { checkInLookupSchema, checkInSchema, recordPaymentSchema, sellMembershipSchema } from "../validation/payments";
 import * as s from "./schemas";
@@ -59,6 +59,17 @@ export const api = {
   revokeDevice: { method: "DELETE", path: "/me/devices/{deviceId}", auth: "user", tag: "Me", summary: "Sign a device out", params: s.deviceIdParamsSchema, response: s.okSchema },
   changePassword: { method: "POST", path: "/me/password", auth: "user", tag: "Me", summary: "Change your password (signs out every device)", body: s.changePasswordRequestSchema, response: s.okSchema },
 
+  notificationPreferences: { method: "GET", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Which push alerts you get from this gym (the in-app list keeps everything)", response: s.preferencesResponseSchema },
+  updateNotificationPreferences: { method: "PUT", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Turn push alert categories on or off for this gym", body: s.updatePreferencesSchema, response: s.preferencesResponseSchema },
+  registerPushToken: { method: "POST", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Register this device's Expo push token for the selected gym", body: s.pushTokenRequestSchema, response: s.okSchema },
+  removePushToken: { method: "DELETE", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Stop push alerts from this gym on this device", response: s.okSchema },
+
+  // ── Notifications & announcements ──
+  notifications: { method: "GET", path: "/notifications", auth: "gym", tag: "Notifications", summary: "Your notifications in this gym, newest first", query: s.pageQuerySchema, response: s.notificationsResponseSchema },
+  readNotification: { method: "POST", path: "/notifications/{notificationId}/read", auth: "gym", tag: "Notifications", summary: "Mark one of your notifications as read", params: s.notificationIdParamsSchema, response: s.okSchema },
+  readAllNotifications: { method: "POST", path: "/notifications/read-all", auth: "gym", tag: "Notifications", summary: "Mark all your notifications in this gym as read", response: s.markedResponseSchema },
+  announcements: { method: "GET", path: "/announcements", auth: "gym", tag: "Notifications", summary: "The gym's announcements for you (members see member and everyone announcements)", response: s.announcementsResponseSchema },
+
   // ── Gym ──
   gym: { method: "GET", path: "/gym", auth: "gym", tag: "Gym", summary: "The selected gym: branding, your role and permissions, subscription state", response: s.currentGymSchema },
 
@@ -79,6 +90,9 @@ export const api = {
   memberDeleteProgress: { method: "DELETE", path: "/member/progress/{entryId}", auth: "member", tag: "Member", summary: "Delete one of your measurement entries", params: s.entryIdParamsSchema, response: s.okSchema },
   memberUploadPhoto: { method: "POST", path: "/member/progress/photos", auth: "member", tag: "Member", summary: "Upload a progress photo (JPEG, PNG or WebP; location and other metadata are removed)", body: progressPhotoSchema, upload: { field: "photo", maxBytes: 8 * 1024 * 1024 }, response: s.photoUploadedResponseSchema, status: 201 },
   memberDeletePhoto: { method: "DELETE", path: "/member/progress/photos/{photoId}", auth: "member", tag: "Member", summary: "Delete one of your progress photos", params: s.photoIdParamsSchema, response: s.okSchema },
+  memberProfile: { method: "GET", path: "/member/profile", auth: "member", tag: "Member", summary: "Your contact details, emergency contact and any account deletion request", response: s.memberProfileResponseSchema },
+  memberUpdateProfile: { method: "PATCH", path: "/member/profile", auth: "member", tag: "Member", summary: "Update your contact details and emergency contact (same rules as the web)", body: memberContactSelfSchema, response: s.memberProfileResponseSchema },
+  memberRequestDeletion: { method: "POST", path: "/member/deletion-request", auth: "member", tag: "Member", summary: "Ask the gym to delete your app account and personal data", body: s.deletionRequestSchema, response: s.deletionRequestResponseSchema, status: 201 },
   memberTrainingSessions: { method: "GET", path: "/member/training-sessions", auth: "member", tag: "Member", summary: "Your upcoming personal training sessions", response: s.memberTrainingSessionsResponseSchema },
 
   // ── Staff ── (request bodies are the same Zod schemas the web forms use)

@@ -1,11 +1,13 @@
 import "server-only";
-import { localDate, toDateString } from "@/domain/dates";
+import { formatDateTime, localDate, toDateString } from "@/domain/dates";
+import { dedupeKey, waitlistPromotedText } from "@/domain/notifications";
 import { assertBookable, bookingPlacement, canMarkAttendance, ClassRuleError, membershipForBooking, refundsCredit, type BookableMembership } from "@/domain/classes";
 import { recordAudit, recordMemberAudit, type AuditEvent } from "@/server/audit/tenant-audit";
 import type { Tx } from "@/server/db/context";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import { assertFeature } from "@/server/plan/limits";
 import type { RequestMeta } from "@/server/security/request-meta";
+import { inAppChannel } from "@/server/notifications";
 import { inTenant } from "@/server/tenant/guards";
 import { inMemberAction, type MemberContext } from "@/server/tenant/member";
 import type { TenantContext } from "@/server/tenant/types";
@@ -101,10 +103,22 @@ export async function promoteFromWaitlist(tx: Tx, actor: BookingActor, sessionId
       select: { id: true },
     });
     await actor.audit(tx, { action: "booking.promote", entityType: "Booking", entityId: b.id, changes: { sessionId } }, meta);
+    await notifyPromoted(tx, actor, b.id, b.memberId, session.startsAt, sessionId);
     promoted++;
   }
   if (promoted) await renumberWaitlist(tx, sessionId);
   return promoted;
+}
+
+/** Tell a promoted member (if they use the member app) that they're in. */
+async function notifyPromoted(tx: Tx, actor: BookingActor, bookingId: string, memberId: string, startsAt: Date, sessionId: string) {
+  const [row] = await tx.$queryRaw<{ user_id: string | null }[]>`SELECT member_app_user_id(${memberId}) AS user_id`;
+  if (!row?.user_id) return;
+  const cls = await tx.classSession.findUnique({ where: { id: sessionId }, select: { classType: { select: { name: true } } } });
+  const text = waitlistPromotedText(cls?.classType.name ?? "your class", formatDateTime(startsAt, actor.timezone));
+  await inAppChannel.send(tx, [
+    { gymId: actor.gymId, recipientUserId: row.user_id, type: "WAITLIST_PROMOTED", ...text, entityType: "Booking", entityId: bookingId, dedupeKey: dedupeKey("WAITLIST_PROMOTED", bookingId, row.user_id) },
+  ]);
 }
 
 type SessionRow = Awaited<ReturnType<typeof lockClassSession>>;

@@ -84,5 +84,8 @@ async function entityHref(tx: Parameters<Parameters<typeof inTenant>[1]>[0], ctx
   }
   if (entityType === "Invoice" && entityId && ctx.permissions.has("payments.view")) return `${base}/invoices/${entityId}`;
   if ((entityType === "GymSubscription" || entityType === "PlatformPlan") && ctx.permissions.has("billing.manage")) return `${base}/billing`;
+  if (entityType === "AccountDeletionRequest" && ctx.permissions.has("members.delete")) return `${base}/deletion-requests`;
+  if (entityType === "Announcement" && ctx.permissions.has("announcements.manage")) return `${base}/announcements`;
+  if (entityType === "ClassSession" && entityId && ctx.permissions.has("classes.view")) return `${base}/classes/${entityId}`;
   return null;
 }

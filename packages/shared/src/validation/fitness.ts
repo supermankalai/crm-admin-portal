@@ -106,3 +106,8 @@ export const trainingSessionSchema = z.object({
 export const trainingSessionUpdateSchema = z.object({ status: z.enum(["COMPLETED", "CANCELLED", "NO_SHOW"]) });
 
 export const attendanceSchema = z.object({ attended: z.boolean() });
+
+/** Web portal: save a plan (new when planId is absent; for a client when memberId is set). */
+export const savePlanActionSchema = workoutPlanSchema.extend({ planId: id.optional(), memberId: id.nullable().optional() });
+export const planStatusActionSchema = z.object({ planId: id, status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]) });
+export const assignPlanActionSchema = z.object({ planId: id, memberId: id });

@@ -33,6 +33,7 @@ export const PERMISSIONS = [
   "reports.view",
   "reports.export",
   "notifications.view",
+  "announcements.manage", // publish and delete gym announcements (members' app and staff)
   "settings.manage",
   "billing.manage",
   "audit.view",
@@ -69,6 +70,7 @@ const MANAGER = new Set<Permission>([
   "reports.view",
   "reports.export",
   "notifications.view",
+  "announcements.manage",
 ]);
 
 const FRONT_DESK = new Set<Permission>([

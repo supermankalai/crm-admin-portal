@@ -427,3 +427,28 @@ all followed by the usual gate (migrate, seed, typecheck, lint, tests, web build
   - Photo queries refetch every 4 minutes, before their links expire, and images use `cachePolicy="memory"`.
   - Screenshots are blocked on photo and client screens.
   - The progress chart is a single series (dataviz palette slot 1, validated on the app's light and dark surfaces). Press and drag shows each value; screen readers get a summary, and the list of entries serves as the table view.
+
+## 15. Notes from mobile Phase 6
+
+- **New tables** (migrations `push_announcements`, `notification_recipients`, `erase_member_inbox`):
+  - **PushToken:** one per device session per gym.
+  - **NotificationPreference:** per user per gym.
+  - **Announcement:** never edited once published (no UPDATE grant).
+  - **AccountDeletionRequest:** one open request per member (partial unique index); never deleted.
+  - **PushDelivery:** no gymId and no app access (the job only).
+  - **Notification:** gains `pushedAt` and six new types. Existing history was marked as already handled, so it is never pushed.
+- **Member write paths during member actions:**
+  - Members can't read other members' accounts or staff rows. Waitlist promotion and deletion requests find their recipients with `member_app_user_id()` and `gym_manager_user_ids()`, which return user ids only.
+  - The `member_action_insert` policy lets a member action create exactly two kinds of notification for someone else: WAITLIST_PROMOTED to a member-app user of the gym, and DELETION_REQUEST to an owner or manager. It compares `type::text`, because enum values added in a migration can't be used as enum literals in that same transaction.
+- **Push job:** `src/server/push/deliver.ts` takes an `OwnerClient` (a type exported by the db layer, which lint allows) and runs only from `scripts/jobs-run.ts`.
+  - Notifications older than 6 hours when first seen are skipped.
+  - Receipts are fetched 15 minutes after sending.
+  - Delivery records and dead tokens are removed after 30 days.
+- **Profile updates** go through `member_update_own_contact()`: the definer function writes only the contact columns of the caller's own Member row, inside a member-action context.
+- **Erasure** goes through `erase_member_fitness_data()`, which requires a manager and an open request. Managers can't read progress photos, so the function deletes them and returns their storage keys; the files are removed after commit.
+- **Mobile app:**
+  - Push registers silently when permission is already granted. The system prompt appears only from *Alerts on this phone*.
+  - A tapped alert switches to its gym if needed, then opens the inbox. Each alert is handled once.
+  - The More tab shows the unread count (polled every 60 s while the app is open).
+  - Inbox and profile are `sensitive` (memory only); announcements are cached.
+  - Push needs `EAS_PROJECT_ID` and a development or production build. Expo Go on Android can't receive remote push (SDK 53+). Without it the app works the same, without phone alerts.

@@ -25,7 +25,8 @@ test.describe("super admin area", () => {
     await loginAsSuperAdmin(page);
     await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
     await expect(page.getByText("Monthly recurring revenue")).toBeVisible();
-    await expect(page.getByText("3 active").or(page.getByText(/\d+ active ·/))).toBeVisible();
+    // Anchored: the "N active memberships" tile also contains "active" (and its count changes daily).
+    await expect(page.getByText(/^\d+ active · \d+ trial · \d+ suspended · \d+ cancelled$/)).toBeVisible();
     await logout(page);
 
     await loginAndLand(page, "owner@irontemple.example", /\/g\/iron-temple\/dashboard/);

@@ -21,7 +21,9 @@ import { ROLE_LABELS } from "@/domain/permissions";
 import { NotFoundError } from "@/server/errors";
 import { getMemberProfile } from "@/server/services/members/profile";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
+import { memberAppStatus } from "@/server/services/member-app-invites";
 import { MemberActions } from "./member-actions";
+import { MemberAppCard } from "./member-app-card";
 import { MembershipActions } from "./membership-actions";
 import { NoteForm } from "./note-form";
 
@@ -70,6 +72,7 @@ export default async function MemberProfilePage({
   const base = `/g/${gymSlug}/members/${memberId}`;
   const current = profile.memberships.find((m) => m.state === "active" || m.state === "frozen");
   const tz = ctx.gym.timezone;
+  const app = ctx.plan?.features.memberApp ? await memberAppStatus(ctx, member.id) : null;
 
   return (
     <>
@@ -182,6 +185,21 @@ export default async function MemberProfilePage({
                 </dl>
               </CardContent>
             </Card>
+            {app && (
+              <div className="lg:col-span-3">
+                <MemberAppCard
+                  gymSlug={gymSlug}
+                  memberId={member.id}
+                  firstName={member.firstName}
+                  status={app.account?.status ?? null}
+                  lastLogin={app.account?.lastLoginAt ? formatDateTime(app.account.lastLoginAt, tz) : null}
+                  pendingInvite={app.invite ? { channel: app.invite.channel, expires: formatDateTime(app.invite.expiresAt, tz) } : null}
+                  hasEmail={!!member.email}
+                  hasPhone={!!member.phone}
+                  canManage={writable && hasPermission(ctx, "members.editContact")}
+                />
+              </div>
+            )}
           </div>
         )}
 

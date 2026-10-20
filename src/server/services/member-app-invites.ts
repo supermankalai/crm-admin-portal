@@ -100,3 +100,33 @@ export async function createMemberAppInvite(ctx: TenantContext, memberId: string
     sentTo,
   };
 }
+
+/** The member's app status for the web profile: account (if any) and any pending invite. */
+export async function memberAppStatus(ctx: TenantContext, memberId: string) {
+  return inTenant(ctx, async (tx) => {
+    const [account, invite] = await Promise.all([
+      tx.memberAccount.findFirst({ where: { memberId }, select: { status: true, lastLoginAt: true, createdAt: true } }),
+      tx.memberAppInvite.findFirst({ where: { memberId, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" }, select: { channel: true, expiresAt: true } }),
+    ]);
+    return { account, invite };
+  });
+}
+
+/**
+ * Turn a member's app access off (lost phone, left the gym) or back on. Off takes effect on their
+ * next request: the server re-checks the account every time.
+ */
+export async function setMemberAppAccess(ctx: TenantContext, memberId: string, enabled: boolean, meta: RequestMeta) {
+  assertCan(ctx, "members.editContact");
+  assertWritable(ctx);
+  return inTenant(ctx, async (tx) => {
+    const account = await tx.memberAccount.findFirst({ where: { memberId, member: { deletedAt: null } }, select: { id: true, status: true } });
+    if (!account) throw new NotFoundError("This member hasn't set up the app.");
+    const status = enabled ? "ACTIVE" : "DISABLED";
+    if (account.status !== status) {
+      await tx.memberAccount.update({ where: { id: account.id }, data: { status }, select: { id: true } });
+      await recordAudit(tx, ctx, { action: enabled ? "member.app_enabled" : "member.app_disabled", entityType: "Member", entityId: memberId }, meta);
+    }
+    return { status };
+  });
+}
