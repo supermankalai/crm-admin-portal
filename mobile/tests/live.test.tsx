@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { AudioSession } from "@livekit/react-native";
+import BookSession from "@/app/(app)/clients/session";
 import LiveCallScreen from "@/app/live/[kind]/[sessionId]";
 import { JoinLiveButton } from "@/components/live-join";
 import { liveState, parseLiveLink } from "@/lib/live";
@@ -18,7 +19,7 @@ jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-const gym = (role: "MEMBER" | "TRAINER") => ({ slug: "gym-a", name: "Gym A", brandColor: "#ea580c", logoUrl: null, timezone: "Asia/Kolkata", currency: "INR", role, permissions: [], access: { writable: true, reason: null, isTrial: false, endsAt: null } });
+const gym = (role: "MEMBER" | "TRAINER", liveSessions?: boolean) => ({ liveSessions, slug: "gym-a", name: "Gym A", brandColor: "#ea580c", logoUrl: null, timezone: "Asia/Kolkata", currency: "INR", role, permissions: [], access: { writable: true, reason: null, isTrial: false, endsAt: null } });
 const inMinutes = (n: number) => new Date(Date.now() + n * 60_000).toISOString();
 
 async function show(ui: React.ReactElement) {
@@ -117,5 +118,30 @@ describe("the call screen", () => {
     mockParams = { kind: "video", sessionId: "s1" };
     await show(<LiveCallScreen />);
     expect(screen.getByText(/isn't valid/)).toBeTruthy();
+  });
+});
+
+describe("a trainer booking PT in the app", () => {
+  it("can make it online when the gym's plan includes live sessions", async () => {
+    __setSessionForTests({ phase: "signedIn", user: { id: "u", name: "Tara" }, gym: gym("TRAINER", true) });
+    mockParams = { memberId: "m1", name: "Alice Anand" };
+    mockToken(201, { id: "p9" });
+    await show(<BookSession />);
+    await fireEvent.press(screen.getByText("Online (video call)"));
+    expect(screen.getByText(/Alice Anand joins from the app/)).toBeTruthy();
+    await fireEvent.press(screen.getByText("Book session"));
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe("https://api.test/api/mobile/v1/trainer/training-sessions");
+    expect(JSON.parse(init.body)).toMatchObject({ memberId: "m1", deliveryMode: "ONLINE" });
+  });
+
+  it("doesn't offer it otherwise, and books in person", async () => {
+    __setSessionForTests({ phase: "signedIn", user: { id: "u", name: "Tara" }, gym: gym("TRAINER") });
+    mockParams = { memberId: "m1", name: "Alice Anand" };
+    mockToken(201, { id: "p9" });
+    await show(<BookSession />);
+    expect(screen.queryByText("Online (video call)")).toBeNull();
+    await fireEvent.press(screen.getByText("Book session"));
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toMatchObject({ deliveryMode: "IN_PERSON" });
   });
 });

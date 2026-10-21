@@ -2568,6 +2568,9 @@
                                 "endsAt"
                               ],
                               "additionalProperties": false
+                            },
+                            "liveSessions": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -3025,6 +3028,9 @@
                             "endsAt"
                           ],
                           "additionalProperties": false
+                        },
+                        "liveSessions": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -9216,6 +9222,9 @@
                         "endsAt"
                       ],
                       "additionalProperties": false
+                    },
+                    "liveSessions": {
+                      "type": "boolean"
                     }
                   },
                   "required": [

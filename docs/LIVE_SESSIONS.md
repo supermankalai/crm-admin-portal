@@ -116,6 +116,9 @@ All three parts are built.
   - The call shows everyone's camera in a grid, with mute, camera on/off, flip camera and leave.
   - The server's reasons appear as written, for example "You're on the waitlist…".
 - **Alerts:** a tapped "starts soon" push alert or inbox item opens the call screen.
+- **Booking in the app:** a trainer booking a PT session gets a "Where" choice (In person, or
+  Online). It appears only when the gym's plan includes live sessions; the gym the app receives
+  carries a `liveSessions` flag for this. Classes are still scheduled on the web only.
 - **Native setup (`app.config.ts`):** `@livekit/react-native-expo-plugin` (call audio routed like
   a phone call) and `@config-plugins/react-native-webrtc`.
   - The camera and microphone texts are the same in every plugin that sets them; otherwise

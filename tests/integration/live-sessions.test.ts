@@ -319,7 +319,9 @@ describe("the mobile endpoint", () => {
   async function appToken(email: string) {
     await getOwnerDb().user.update({ where: { email }, data: { passwordHash: await hashPassword("Live-Pass-2026") } });
     const login = await callApi<{ accessToken: string }>(loginRoute.POST, { body: { identifier: email, password: "Live-Pass-2026", device: device() } });
-    const scoped = await callApi<{ accessToken: string }>(selectGymRoute.POST, { token: login.body.accessToken, body: { gymSlug: "gym-a" } });
+    const scoped = await callApi<{ accessToken: string; gym: { liveSessions?: boolean } }>(selectGymRoute.POST, { token: login.body.accessToken, body: { gymSlug: "gym-a" } });
+    // The app shows the "Online" choice from this.
+    expect(scoped.body.gym.liveSessions).toBe(true);
     return scoped.body.accessToken;
   }
 

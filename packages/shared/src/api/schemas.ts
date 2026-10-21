@@ -126,6 +126,8 @@ export const currentGymSchema = z.object({
   /** Staff permissions (empty for members). The server re-checks every one. */
   permissions: z.array(z.string()),
   access: accessStateSchema,
+  /** Online classes and PT sessions can be booked (the plan includes them and the server is set up). Absent from older servers. */
+  liveSessions: z.boolean().optional(),
 });
 
 export const selectGymResponseSchema = z.object({
