@@ -23,10 +23,15 @@ export type NotificationKind =
   | "PT_SESSION_CANCELLED"
   | "PT_SESSION_REMINDER"
   | "PT_CREDITS_LOW"
-  | "PT_PACKAGE_EXPIRING";
+  | "PT_PACKAGE_EXPIRING"
+  | "LIVE_CLASS_STARTING"
+  | "LIVE_PT_STARTING";
 
 /** Personal training alerts: sent to the member and their trainer (switched by "training"). */
-export const PT_KINDS: readonly NotificationKind[] = ["PT_ASSIGNED", "PT_ENDED", "PT_SESSION_BOOKED", "PT_SESSION_CANCELLED", "PT_SESSION_REMINDER", "PT_CREDITS_LOW", "PT_PACKAGE_EXPIRING"];
+export const PT_KINDS: readonly NotificationKind[] = ["PT_ASSIGNED", "PT_ENDED", "PT_SESSION_BOOKED", "PT_SESSION_CANCELLED", "PT_SESSION_REMINDER", "PT_CREDITS_LOW", "PT_PACKAGE_EXPIRING", "LIVE_PT_STARTING"];
+
+/** "Starts soon, join now" for online sessions: sent when the call opens. */
+export const LIVE_KINDS: readonly NotificationKind[] = ["LIVE_CLASS_STARTING", "LIVE_PT_STARTING"];
 
 /** Alerts sent to staff by role (the rest go to a specific member, or everyone for announcements). */
 export type StaffAlertKind = "MEMBERSHIP_EXPIRING" | "PAYMENT_OVERDUE" | "PLAN_LIMIT_NEAR" | "SUBSCRIPTION_EXPIRING" | "CLASS_FULL";
@@ -141,6 +146,7 @@ export function preferenceFor(kind: NotificationKind, recipient: Recipient): Pre
   if (recipient === "staff") return "staffAlerts";
   switch (kind) {
     case "CLASS_REMINDER":
+    case "LIVE_CLASS_STARTING":
       return "classReminders";
     case "WAITLIST_PROMOTED":
       return "waitlist";
@@ -185,6 +191,10 @@ export function pushText(kind: NotificationKind, recipient: Recipient, gymName: 
           return "Your PT package is running low.";
         case "PT_PACKAGE_EXPIRING":
           return "Some of your PT sessions expire soon.";
+        case "LIVE_CLASS_STARTING":
+          return "Your online class is about to start. Tap to join.";
+        case "LIVE_PT_STARTING":
+          return "Your online training session is about to start. Tap to join.";
         default:
           return "You have a new notification.";
       }
@@ -210,6 +220,10 @@ export function pushText(kind: NotificationKind, recipient: Recipient, gymName: 
         return "You have a PT session soon.";
       case "PT_CREDITS_LOW":
         return "A client's PT package is running low.";
+      case "LIVE_CLASS_STARTING":
+        return "Your online class is about to start. Tap to host it.";
+      case "LIVE_PT_STARTING":
+        return "Your online PT session is about to start. Tap to join.";
       default:
         return "Open FitCRM for details.";
     }
@@ -220,4 +234,18 @@ export function pushText(kind: NotificationKind, recipient: Recipient, gymName: 
 function truncate(text: string, max: number) {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+// ── Live sessions ──
+
+export function liveClassStartingText(className: string, time: string, host: boolean) {
+  return host
+    ? { title: "Your online class starts soon", body: `${className} at ${time}. Open the call to host it.` }
+    : { title: "Your online class starts soon", body: `${className} at ${time}. Join from the app.` };
+}
+
+export function livePtStartingText(otherPerson: string, time: string, trainer: boolean) {
+  return trainer
+    ? { title: "Your online PT session starts soon", body: `With ${otherPerson} at ${time}. Open the call to join.` }
+    : { title: "Your online training session starts soon", body: `With ${otherPerson} at ${time}. Join from the app.` };
 }

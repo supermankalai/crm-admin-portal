@@ -10,6 +10,8 @@ import {
   expiringText,
   isNearLimit,
   limitText,
+  liveClassStartingText,
+  livePtStartingText,
   memberExpiringText,
   overdueText,
   PAYMENT_DUE_WARNING_DAYS,
@@ -21,6 +23,7 @@ import {
   type NotificationKind,
   type StaffAlertKind,
 } from "@/domain/notifications";
+import { LIVE_OPENS_MINUTES_BEFORE } from "@/domain/live";
 import type { GymRole } from "@/domain/permissions";
 import {
   packageState,
@@ -93,7 +96,7 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
     select: {
       timezone: true,
       status: true,
-      subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, plan: { select: { name: true, maxMembers: true, maxStaff: true, maxLocations: true } } } },
+      subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, plan: { select: { name: true, maxMembers: true, maxStaff: true, maxLocations: true, featureLiveSessions: true } } } },
     },
   });
   if (!gym || gym.status === "SUSPENDED" || gym.status === "CANCELLED") return { created: 0, subjects: 0 };
@@ -190,6 +193,7 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
   }
 
   await personalTraining(tx, gymId, gym.timezone, today, now, toMember, direct);
+  if (gym.subscription?.plan.featureLiveSessions) await liveStarting(tx, gymId, gym.timezone, now, toMember, direct);
 
   // The gym's own platform subscription or trial ending soon.
   const sub = gym.subscription;
@@ -243,6 +247,38 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
 }
 
 type ToMember = (memberId: string, kind: NotificationKind, key: string, text: { title: string; body: string }, entityType: string, entityId: string) => void;
+
+/**
+ * Online classes and PT sessions whose call has just opened (10 minutes before the start): the
+ * booked members, the PT client and the trainer are told to join. Once per person per session.
+ */
+async function liveStarting(tx: Tx, gymId: string, timezone: string, now: Date, toMember: ToMember, direct: OutgoingNotification[]) {
+  const toStaff = (userId: string, kind: NotificationKind, key: string, text: { title: string; body: string }, entityType: string, entityId: string) =>
+    direct.push({ gymId, recipientUserId: userId, type: kind, ...text, entityType, entityId, dedupeKey: dedupeKey(kind, `staff:${key}`, userId) });
+  const opening = { status: "SCHEDULED" as const, deliveryMode: { not: "IN_PERSON" as const }, startsAt: { gt: now, lte: new Date(now.getTime() + LIVE_OPENS_MINUTES_BEFORE * 60_000) } };
+
+  const classes = await tx.classSession.findMany({
+    where: { gymId, ...opening },
+    select: { id: true, startsAt: true, classType: { select: { name: true } }, trainer: { select: { userId: true, status: true } }, bookings: { where: { status: "BOOKED" }, select: { memberId: true } } },
+    take: 200,
+  });
+  for (const c of classes) {
+    const time = timeIn(c.startsAt, timezone);
+    for (const b of c.bookings) toMember(b.memberId, "LIVE_CLASS_STARTING", c.id, liveClassStartingText(c.classType.name, time, false), "ClassSession", c.id);
+    if (c.trainer.status === "ACTIVE") toStaff(c.trainer.userId, "LIVE_CLASS_STARTING", c.id, liveClassStartingText(c.classType.name, time, true), "ClassSession", c.id);
+  }
+
+  const pts = await tx.trainingSession.findMany({
+    where: { gymId, ...opening, member: { deletedAt: null } },
+    select: { id: true, memberId: true, startsAt: true, member: { select: { firstName: true, lastName: true } }, trainer: { select: { userId: true, status: true, user: { select: { name: true } } } } },
+    take: 500,
+  });
+  for (const s of pts) {
+    const time = timeIn(s.startsAt, timezone);
+    toMember(s.memberId, "LIVE_PT_STARTING", s.id, livePtStartingText(s.trainer.user.name, time, false), "TrainingSession", s.id);
+    if (s.trainer.status === "ACTIVE") toStaff(s.trainer.userId, "LIVE_PT_STARTING", s.id, livePtStartingText(`${s.member.firstName} ${s.member.lastName}`, time, true), "TrainingSession", s.id);
+  }
+}
 
 /**
  * Personal training: a reminder before each PT session (to the member and the trainer), and

@@ -51,8 +51,9 @@ describe("inbox", () => {
         unread: 1,
         nextCursor: null,
         items: [
-          { id: "n1", type: "CLASS_REMINDER", title: "Class reminder", body: "Spin starts at 6:00 pm. See you there!", target: "classes", readAt: null, createdAt: "2026-10-16T12:00:00.000Z" },
-          { id: "n2", type: "ANNOUNCEMENT", title: "New hours", body: "Opening at 5:30 am.", target: "announcements", readAt: "2026-10-15T10:00:00.000Z", createdAt: "2026-10-15T09:00:00.000Z" },
+          { id: "n1", type: "CLASS_REMINDER", title: "Class reminder", body: "Spin starts at 6:00 pm. See you there!", target: "classes", live: null, readAt: null, createdAt: "2026-10-16T12:00:00.000Z" },
+          { id: "n2", type: "ANNOUNCEMENT", title: "New hours", body: "Opening at 5:30 am.", target: "announcements", live: null, readAt: "2026-10-15T10:00:00.000Z", createdAt: "2026-10-15T09:00:00.000Z" },
+          { id: "n3", type: "LIVE_CLASS_STARTING", title: "Your online class starts soon", body: "Yoga at 6:00 pm. Join from the app.", target: null, live: { kind: "class", sessionId: "s9" }, readAt: "2026-10-14T10:00:00.000Z", createdAt: "2026-10-14T09:00:00.000Z" },
         ],
       },
       "/notifications/n1/read:POST": { ok: true },
@@ -64,6 +65,9 @@ describe("inbox", () => {
     await fireEvent.press(screen.getByLabelText(/^Unread\. Class reminder/));
     expect(mockPush).toHaveBeenCalledWith("/classes");
     expect(calls("POST", "/notifications/n1/read")).toHaveLength(1);
+    // An online class about to start opens its call.
+    await fireEvent.press(screen.getByLabelText(/Your online class starts soon/));
+    expect(mockPush).toHaveBeenLastCalledWith({ pathname: "/live/[kind]/[sessionId]", params: { kind: "class", sessionId: "s9" } });
     await fireEvent.press(screen.getByLabelText("Mark all read"));
     expect(calls("POST", "/notifications/read-all")).toHaveLength(1);
     await view.unmount();

@@ -70,10 +70,15 @@ Nothing is recorded (no Egress) in this version.
    required**. It does not run in Expo Go (the app already uses a dev client). This also adds
    the microphone permission, iOS background audio, and an Android foreground-service
    notification while in a call.
-8. **Reminders link straight into the call.** The existing class and PT reminders get a "Join"
-   deep link for online sessions, and a new alert ("Your online class starts in 10 minutes") is
-   sent when the window opens. Lock-screen text stays generic, as for other alerts. These alerts
-   use the existing **Classes** and **Personal training** preferences.
+8. **A "starts soon" alert links straight into the call.** When the call opens (10 minutes before
+   the start), the jobs runner sends a new alert:
+   - `LIVE_CLASS_STARTING` goes to the booked members and the trainer.
+   - `LIVE_PT_STARTING` goes to the client and the trainer.
+
+   Tapping the push alert, or the item in the inbox, opens the call screen. Lock-screen text stays
+   generic ("Your online class is about to start. Tap to join."). The alerts follow the existing
+   **Class reminders** and **Personal training** preferences. The existing 2-hour reminders are
+   unchanged.
 9. **Nothing is recorded or stored.** There is no Egress, no transcripts and no chat logs. The
    only data kept is the attendance in decision 5. Recording can be added later, together with
    consent capture and a storage target.
@@ -97,7 +102,28 @@ Nothing is recorded (no Egress) in this version.
 
 ## Parts
 
-Parts 1 and 2 are built; part 3 is next.
+All three parts are built.
+
+**What the mobile app has (part 3)**
+- **Join buttons:**
+  - A member sees one on an online or hybrid class they're booked in, and on their online PT
+    sessions (Workouts tab).
+  - A trainer sees "Host the online class" or "Join the online session" on their Schedule tab.
+  - Before the call opens, the button reads "you can join from HH:MM".
+- **Call screen:** `/live/{class|pt}/{id}`, full screen, starting with a ready step for the
+  camera and microphone:
+  - Members joining a class start with both off. In PT, and for trainers, both start on.
+  - The call shows everyone's camera in a grid, with mute, camera on/off, flip camera and leave.
+  - The server's reasons appear as written, for example "You're on the waitlist…".
+- **Alerts:** a tapped "starts soon" push alert or inbox item opens the call screen.
+- **Native setup (`app.config.ts`):** `@livekit/react-native-expo-plugin` (call audio routed like
+  a phone call) and `@config-plugins/react-native-webrtc`.
+  - The camera and microphone texts are the same in every plugin that sets them; otherwise
+    `expo-camera`'s `microphonePermission: false` would remove the microphone text.
+  - `SYSTEM_ALERT_WINDOW` is blocked, since calls don't draw over other apps.
+- **New builds:** the app needs new development builds (`npx expo run:android` /
+  `npx expo run:ios`) and new EAS builds. Expo Go can't run calls.
+- **Compatibility:** older app builds keep working, because the new response fields are additions.
 
 **What the web portal has (part 2)**
 - **Booking:** "Where" appears when scheduling a class (in the room, online only, or hybrid)
@@ -123,6 +149,6 @@ Parts 1 and 2 are built; part 3 is next.
 |---|---|
 | **1. Server foundation** | Env config, `featureLiveSessions` flag, `deliveryMode` on both session tables (migration, room nullable for online classes), `LiveAttendance` with RLS and `app_record_live_event()`, the member timetable including online classes, the token service (`src/server/services/live/join.ts`: join window, who may join, grants), the mobile endpoint `POST /api/mobile/v1/live/{class\|pt}/{sessionId}/token` (rate-limited, in the OpenAPI contract), closing rooms on cancel and in the jobs runner, the webhook, `live:check`, and unit and integration tests that decode the issued tokens to check their grants. |
 | **2. Web portal** | The web join (server action), the CSP and Permissions-Policy changes, the "Where" choice when scheduling classes and booking PT, online badges and Join buttons in the lists, the call page with host controls, and "joined online" on the class roster and PT sessions. Integration and e2e tests. |
-| **3. Mobile app** | The LiveKit React Native SDK and config plugins, a pre-join screen (camera/mic check), the call screen for members and trainers, Join buttons on My classes, My trainer and the trainer schedule, deep links from reminders, and the "starts in 10 minutes" alert. Requires a new dev build. |
+| **3. Mobile app** | The LiveKit React Native SDK and config plugins, the ready step and the call screen, Join buttons on the member's class and PT sessions and the trainer's schedule, `deliveryMode` in the mobile API, the `LIVE_*_STARTING` alerts with push and inbox links, and unit, integration and Jest tests. Requires new app builds. |
 
 Each part stops for review before the next.

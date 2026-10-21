@@ -8,6 +8,7 @@ import { useOnline } from "@/hooks/use-online";
 import { useSession } from "@/hooks/use-session";
 import { errorMessage } from "@/lib/errors";
 import { hasStarted, PT_STATUS, scheduleSubtitle, scheduleTitle } from "@/lib/fitness";
+import { JoinLiveButton } from "@/components/live-join";
 import { useTrainerSchedule, useUpdateSession, type ScheduleItem } from "@/lib/fitness-queries";
 import { dayLabel, localDay, time } from "@/lib/format";
 
@@ -63,9 +64,10 @@ export default function ScheduleTab() {
               const pt = item.kind === "pt" ? PT_STATUS[item.status as keyof typeof PT_STATUS] : null;
               const onPress =
                 item.kind === "class" ? () => router.push({ pathname: "/classes/[sessionId]", params: { sessionId: item.id } }) : item.kind === "pt" ? () => openPt(item) : undefined;
+              const live = item.kind !== "shift" && item.status === "SCHEDULED" ? item : null;
               return (
+                <View key={`${item.kind}-${item.id}`} className="gap-2">
                 <Pressable
-                  key={`${item.kind}-${item.id}`}
                   accessibilityRole={onPress ? "button" : "text"}
                   accessibilityLabel={`${time(item.startsAt, tz)} to ${time(item.endsAt, tz)}, ${scheduleTitle(item)}. ${scheduleSubtitle(item)}`}
                   onPress={onPress}
@@ -83,6 +85,8 @@ export default function ScheduleTab() {
                   </View>
                   {pt && item.kind === "pt" && item.status !== "SCHEDULED" ? <StatusChip label={pt.label} tone={pt.tone} /> : null}
                 </Pressable>
+                {live ? <JoinLiveButton link={{ kind: live.kind, sessionId: live.id }} mode={live.deliveryMode} startsAt={live.startsAt} endsAt={live.endsAt} timeZone={tz} label={live.kind === "class" ? "Host the online class" : "Join the online session"} /> : null}
+                </View>
               );
             })}
           </View>

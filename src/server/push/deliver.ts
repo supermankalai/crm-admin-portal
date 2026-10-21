@@ -29,6 +29,14 @@ export const DEVICE_IDLE_MS = 30 * 86_400_000;
 
 type Pending = { id: string; gymId: string; recipientUserId: string; type: NotificationKind; entityType: string | null; entityId: string | null };
 
+/** "class:<id>" / "pt:<id>" for a live session's alert (the app re-checks everything when joining). */
+function liveLink(n: Pending): { live?: string } {
+  if (!n.entityId) return {};
+  if (n.type === "LIVE_CLASS_STARTING" && n.entityType === "ClassSession") return { live: `class:${n.entityId}` };
+  if (n.type === "LIVE_PT_STARTING" && n.entityType === "TrainingSession") return { live: `pt:${n.entityId}` };
+  return {};
+}
+
 export async function deliverPendingPushes(db: DbClient, provider: PushProvider, now = new Date()) {
   const stale = await db.notification.updateMany({ where: { pushedAt: null, createdAt: { lt: new Date(now.getTime() - PUSH_MAX_AGE_MS) } }, data: { pushedAt: now } });
   const pending: Pending[] = await db.notification.findMany({
@@ -88,7 +96,7 @@ export async function deliverPendingPushes(db: DbClient, provider: PushProvider,
     const text = pushText(n.type, recipient, gym.name, n.entityId ? titleBy.get(n.entityId) : undefined);
     for (const d of devices) {
       const provider = d.provider === "fcm" ? ("fcm" as const) : ("expo" as const);
-      outgoing.push({ notificationId: n.id, pushTokenId: d.id, message: { to: d.token, provider, ...text, data: { notificationId: n.id, type: n.type, gymSlug: gym.slug } } });
+      outgoing.push({ notificationId: n.id, pushTokenId: d.id, message: { to: d.token, provider, ...text, data: { notificationId: n.id, type: n.type, gymSlug: gym.slug, ...liveLink(n) } } });
     }
   }
 

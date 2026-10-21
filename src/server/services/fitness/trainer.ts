@@ -46,14 +46,14 @@ export async function trainerSchedule(ctx: TenantContext, query: { from?: string
     const [classes, pts, shifts] = await Promise.all([
       tx.classSession.findMany({
         where: { trainerId: staffId, ...overlaps },
-        select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, bookings: { where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } }, select: { id: true } } },
+        select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, deliveryMode: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, bookings: { where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } }, select: { id: true } } },
       }),
-      tx.trainingSession.findMany({ where: { trainerId: staffId, ...overlaps }, select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, member: { select: { id: true, firstName: true, lastName: true } } } }),
+      tx.trainingSession.findMany({ where: { trainerId: staffId, ...overlaps }, select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, deliveryMode: true, member: { select: { id: true, firstName: true, lastName: true } } } }),
       tx.staffShift.findMany({ where: { staffId, ...overlaps }, select: { id: true, startsAt: true, endsAt: true, location: { select: { name: true } } } }),
     ]);
     const items = [
-      ...classes.map((c) => ({ kind: "class" as const, id: c.id, startsAt: c.startsAt, endsAt: c.endsAt, title: c.classType.name, color: c.classType.color, room: c.room?.name ?? "Online", booked: c.bookings.length, capacity: c.capacity, status: c.status })),
-      ...pts.map((p) => ({ kind: "pt" as const, id: p.id, startsAt: p.startsAt, endsAt: p.endsAt, member: { id: p.member.id, name: fullName(p.member) }, focus: p.focus, status: p.status })),
+      ...classes.map((c) => ({ kind: "class" as const, id: c.id, startsAt: c.startsAt, endsAt: c.endsAt, title: c.classType.name, color: c.classType.color, room: c.room?.name ?? "Online", booked: c.bookings.length, capacity: c.capacity, status: c.status, deliveryMode: c.deliveryMode })),
+      ...pts.map((p) => ({ kind: "pt" as const, id: p.id, startsAt: p.startsAt, endsAt: p.endsAt, member: { id: p.member.id, name: fullName(p.member) }, focus: p.focus, status: p.status, deliveryMode: p.deliveryMode })),
       ...shifts.map((s) => ({ kind: "shift" as const, id: s.id, startsAt: s.startsAt, endsAt: s.endsAt, location: s.location.name })),
     ].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime() || (a.kind === "shift" ? -1 : 1));
     return { from: r.from, to: r.to, items: items.map((i) => ({ ...i, startsAt: i.startsAt.toISOString(), endsAt: i.endsAt.toISOString() })) };
@@ -137,7 +137,7 @@ export async function trainerClient(ctx: TenantContext, memberId: string, meta: 
         where: { memberId, startsAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
         orderBy: { startsAt: "asc" },
         take: 20,
-        select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, trainer: { select: { user: { select: { name: true } } } }, member: { select: { id: true, firstName: true, lastName: true } } },
+        select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, deliveryMode: true, trainer: { select: { user: { select: { name: true } } } }, member: { select: { id: true, firstName: true, lastName: true } } },
       }),
       tx.checkIn.findFirst({ where: { memberId, result: "ALLOWED" }, orderBy: { checkedInAt: "desc" }, select: { checkedInAt: true } }),
     ]);
@@ -187,10 +187,10 @@ export async function addTrainerNote(ctx: TenantContext, memberId: string, body:
 
 // ─────────────────────────────── Personal training sessions ───────────────────────────────
 
-type SessionRow = { id: string; startsAt: Date; endsAt: Date; status: "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW"; focus: string | null; member: { id: string; firstName: string; lastName: string } };
+type SessionRow = { id: string; startsAt: Date; endsAt: Date; status: "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW"; focus: string | null; deliveryMode: "IN_PERSON" | "ONLINE" | "HYBRID"; member: { id: string; firstName: string; lastName: string } };
 
 function sessionItem(s: SessionRow, trainer: string) {
-  return { id: s.id, startsAt: s.startsAt.toISOString(), endsAt: s.endsAt.toISOString(), status: s.status, focus: s.focus, trainer, member: { id: s.member.id, name: fullName(s.member) } };
+  return { id: s.id, startsAt: s.startsAt.toISOString(), endsAt: s.endsAt.toISOString(), status: s.status, focus: s.focus, trainer, member: { id: s.member.id, name: fullName(s.member) }, deliveryMode: s.deliveryMode };
 }
 
 /** Booking and closing live in the PT module (alerts, manager booking); the trainer app uses them too. */
@@ -209,7 +209,7 @@ export function memberTrainingSessions(ctx: MemberContext) {
       where: { memberId: ctx.memberId, startsAt: { gte: new Date(Date.now() - 2 * 3_600_000) }, status: { in: ["SCHEDULED", "COMPLETED"] } },
       orderBy: { startsAt: "asc" },
       take: 20,
-      select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, trainerId: true, member: { select: { id: true, firstName: true, lastName: true } } },
+      select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, trainerId: true, deliveryMode: true, member: { select: { id: true, firstName: true, lastName: true } } },
     });
     const names = await staffNamesForMember(tx, rows.map((r) => r.trainerId));
     return { sessions: rows.map((r) => sessionItem(r, names.get(r.trainerId) ?? "Your trainer")) };

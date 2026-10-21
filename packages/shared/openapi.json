@@ -7411,7 +7411,9 @@
                               "PT_SESSION_CANCELLED",
                               "PT_SESSION_REMINDER",
                               "PT_CREDITS_LOW",
-                              "PT_PACKAGE_EXPIRING"
+                              "PT_PACKAGE_EXPIRING",
+                              "LIVE_CLASS_STARTING",
+                              "LIVE_PT_STARTING"
                             ]
                           },
                           "title": {
@@ -7432,6 +7434,33 @@
                                   "alerts",
                                   "members"
                                 ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "live": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "class",
+                                      "pt"
+                                    ]
+                                  },
+                                  "sessionId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "sessionId"
+                                ],
+                                "additionalProperties": false
                               },
                               {
                                 "type": "null"
@@ -7462,6 +7491,7 @@
                           "title",
                           "body",
                           "target",
+                          "live",
                           "readAt",
                           "createdAt"
                         ],
@@ -11017,6 +11047,14 @@
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
+                          },
                           "spotsLeft": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -11090,6 +11128,7 @@
                           "capacity",
                           "booked",
                           "waitlisted",
+                          "deliveryMode",
                           "spotsLeft",
                           "my",
                           "canBook",
@@ -19045,6 +19084,14 @@
                               "name"
                             ],
                             "additionalProperties": false
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
                           }
                         },
                         "required": [
@@ -19054,7 +19101,8 @@
                           "status",
                           "focus",
                           "trainer",
-                          "member"
+                          "member",
+                          "deliveryMode"
                         ],
                         "additionalProperties": false
                       }
@@ -26126,6 +26174,14 @@
                               },
                               "status": {
                                 "type": "string"
+                              },
+                              "deliveryMode": {
+                                "type": "string",
+                                "enum": [
+                                  "IN_PERSON",
+                                  "ONLINE",
+                                  "HYBRID"
+                                ]
                               }
                             },
                             "required": [
@@ -26138,7 +26194,8 @@
                               "room",
                               "booked",
                               "capacity",
-                              "status"
+                              "status",
+                              "deliveryMode"
                             ],
                             "additionalProperties": false
                           },
@@ -26186,6 +26243,14 @@
                               },
                               "status": {
                                 "type": "string"
+                              },
+                              "deliveryMode": {
+                                "type": "string",
+                                "enum": [
+                                  "IN_PERSON",
+                                  "ONLINE",
+                                  "HYBRID"
+                                ]
                               }
                             },
                             "required": [
@@ -26195,7 +26260,8 @@
                               "endsAt",
                               "member",
                               "focus",
-                              "status"
+                              "status",
+                              "deliveryMode"
                             ],
                             "additionalProperties": false
                           },
@@ -27893,6 +27959,14 @@
                               "name"
                             ],
                             "additionalProperties": false
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
                           }
                         },
                         "required": [
@@ -27902,7 +27976,8 @@
                           "status",
                           "focus",
                           "trainer",
-                          "member"
+                          "member",
+                          "deliveryMode"
                         ],
                         "additionalProperties": false
                       }

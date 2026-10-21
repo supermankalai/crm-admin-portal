@@ -178,6 +178,7 @@ export async function memberClasses(ctx: MemberContext, query: { from?: string; 
         description: r.class_description,
         room: r.room_name ?? "Online",
         location: r.location_name ?? "Online",
+        deliveryMode: r.delivery_mode,
         trainer: r.trainer_name,
         capacity: r.capacity,
         booked: r.booked,

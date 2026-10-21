@@ -7,6 +7,11 @@ import * as selectGymRoute from "@/app/api/mobile/v1/auth/select-gym/route";
 import * as liveTokenRoute from "@/app/api/mobile/v1/live/[kind]/[sessionId]/token/route";
 import { hashPassword } from "@/server/auth/password";
 import { liveRoomName } from "@/domain/live";
+import { generateGymNotifications } from "@/server/notifications";
+import type { PushMessage, PushProvider, PushTicket } from "@/server/push/provider";
+import { deliverPendingPushes } from "@/server/push/deliver";
+import { listInbox } from "@/server/services/app-inbox";
+import type { GymAuth } from "@/server/mobile/context";
 import { appDb } from "@/server/db/client";
 import { AppError, FeatureNotInPlanError, ForbiddenError, NotFoundError, UnauthenticatedError } from "@/server/errors";
 import { addDays, localDate } from "@/domain/dates";
@@ -421,6 +426,61 @@ describe("what the web pages show", () => {
     const { classes, pts } = await mySchedule(trainer, weekStart(localDate(new Date(), trainer.gym.timezone)));
     expect(classes.find((c) => c.id === ids.onlineClass)?.deliveryMode).toBe("ONLINE");
     expect(pts.find((p) => p.id === ids.onlinePt)?.deliveryMode).toBe("ONLINE");
+  });
+});
+
+describe("\"starts soon\" alerts", () => {
+  class RecordingPush implements PushProvider {
+    sent: PushMessage[] = [];
+    async send(messages: PushMessage[]): Promise<PushTicket[]> {
+      this.sent.push(...messages);
+      return messages.map((_, i) => ({ status: "ok" as const, id: `t${this.sent.length}-${i}` }));
+    }
+    async receipts() {
+      return {};
+    }
+  }
+
+  it("go to booked members, the PT client and the trainer when the call opens, once", async () => {
+    const db = getOwnerDb();
+    await db.$transaction((tx) => generateGymNotifications(tx, w.gymA.id));
+    await db.$transaction((tx) => generateGymNotifications(tx, w.gymA.id));
+    const rows = await db.notification.findMany({ where: { gymId: w.gymA.id, type: { in: ["LIVE_CLASS_STARTING", "LIVE_PT_STARTING"] } }, select: { recipientUserId: true, type: true, entityId: true } });
+    const got = rows.map((r) => `${r.recipientUserId === alice.user.id ? "alice" : r.recipientUserId === mo.user.id ? "mo" : r.recipientUserId === trainer.user.id ? "trainer" : "other"}:${r.type}:${r.entityId}`).sort();
+    expect(got).toEqual(
+      [
+        // The online class (starts in 5 minutes): Alice is booked, Mo is only on the waitlist.
+        `alice:LIVE_CLASS_STARTING:${ids.onlineClass}`,
+        `trainer:LIVE_CLASS_STARTING:${ids.onlineClass}`,
+        // Online PT sessions starting in 2 minutes (the in-person one gets nothing).
+        `alice:LIVE_PT_STARTING:${ids.onlinePt}`,
+        `trainer:LIVE_PT_STARTING:${ids.onlinePt}`,
+        `mo:LIVE_PT_STARTING:${ids.moPt}`,
+        `trainer:LIVE_PT_STARTING:${ids.moPt}`,
+      ].sort()
+    );
+  });
+
+  it("open the call from the inbox and from the push alert", async () => {
+    const auth = { kind: "member", member: alice, user: alice.user, sessionId: "", sessionVersion: 0 } as unknown as GymAuth;
+    const inbox = await listInbox(auth, { limit: 20 });
+    const live = inbox.items.filter((i) => i.live).map((i) => i.live);
+    expect(live).toEqual(expect.arrayContaining([{ kind: "class", sessionId: ids.onlineClass }, { kind: "pt", sessionId: ids.onlinePt }]));
+
+    const db = getOwnerDb();
+    const device = await db.mobileDeviceSession.findFirstOrThrow({ where: { userId: alice.user.id }, select: { id: true } });
+    await db.pushToken.create({ data: { gymId: w.gymA.id, userId: alice.user.id, deviceSessionId: device.id, token: "ExponentPushToken[live-0001-abcdefgh]", platform: "android" } });
+    const push = new RecordingPush();
+    await deliverPendingPushes(db, push);
+    // Her other alerts (PT reminders and so on) carry no call.
+    const mine = push.sent.filter((m) => m.to === "ExponentPushToken[live-0001-abcdefgh]" && m.data.live);
+    expect(push.sent.filter((m) => m.data.live && !/^(class|pt):/.test(m.data.live))).toEqual([]);
+    expect(mine.map((m) => m.data.live).sort()).toEqual([`class:${ids.onlineClass}`, `pt:${ids.onlinePt}`].sort());
+    // Lock screens stay generic: no class name, trainer or time.
+    for (const m of mine) {
+      expect(m.body).toMatch(/about to start\. Tap to join\./);
+      expect(m.body).not.toMatch(/Yoga|tara/);
+    }
   });
 });
 

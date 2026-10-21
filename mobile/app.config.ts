@@ -36,6 +36,9 @@ function googleServicesFor(pkg: string): string | null {
 }
 const googleServicesFile = googleServicesFor(androidPackage);
 
+const CAMERA_TEXT = "Allow $(PRODUCT_NAME) to use the camera to scan check-in QR codes, take progress photos and show you in online training sessions.";
+const MICROPHONE_TEXT = "Allow $(PRODUCT_NAME) to use the microphone in online training sessions and live classes.";
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: `Kangaroo Gym Pilot${nameSuffix}`,
@@ -68,19 +71,33 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Don't back up app data to the cloud: tokens in SecureStore can't be decrypted after restore.
     allowBackup: false,
     predictiveBackGestureEnabled: false,
+    // Video calls don't draw over other apps; keep this sensitive permission out of the build.
+    blockedPermissions: ["android.permission.SYSTEM_ALERT_WINDOW"],
   },
   web: { output: "static", favicon: "./assets/images/favicon.png" },
   plugins: [
     "expo-router",
     ["expo-splash-screen", { backgroundColor: "#ea580c", image: "./assets/images/splash-icon.png", imageWidth: 76 }],
     ["expo-secure-store", { configureAndroidBackup: true, faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
-    // Camera for scanning members' QR codes at the front desk (no microphone, no recording).
-    ["expo-camera", { cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan members' check-in QR codes.", microphonePermission: false, recordAudioAndroid: false }],
-    // Progress photos: from the camera or the photo library (no microphone; videos aren't allowed).
-    ["expo-image-picker", { photosPermission: "Allow $(PRODUCT_NAME) to choose progress photos from your library.", cameraPermission: "Allow $(PRODUCT_NAME) to take progress photos.", microphonePermission: false }],
+    // Camera for scanning members' QR codes at the front desk, and camera and microphone for live
+    // sessions (video calls, never recorded). Every plugin that touches these permissions gets the
+    // same texts, or the last one to run would overwrite (or, with false, remove) them.
+    ["expo-camera", { cameraPermission: CAMERA_TEXT, microphonePermission: MICROPHONE_TEXT, recordAudioAndroid: false }],
+    // Progress photos: from the camera or the photo library (videos aren't allowed).
+    ["expo-image-picker", { photosPermission: "Allow $(PRODUCT_NAME) to choose progress photos from your library.", cameraPermission: CAMERA_TEXT, microphonePermission: MICROPHONE_TEXT }],
     // Push alerts: Android needs a notification channel and a small monochrome icon.
     ["expo-notifications", { icon: "./assets/images/android-icon-monochrome.png", color: "#ea580c", defaultChannel: "default" }],
     ["expo-local-authentication", { faceIDPermission: "Allow $(PRODUCT_NAME) to use Face ID to unlock the app." }],
+    // Live sessions (online PT and classes) over LiveKit: WebRTC with camera and microphone, the
+    // call audio routed like a phone call. Listed after expo-camera so these permission texts win.
+    ["@livekit/react-native-expo-plugin", { android: { audioType: "communication" } }],
+    [
+      "@config-plugins/react-native-webrtc",
+      {
+        cameraPermission: CAMERA_TEXT,
+        microphonePermission: MICROPHONE_TEXT,
+      },
+    ],
     [
       "expo-build-properties",
       {

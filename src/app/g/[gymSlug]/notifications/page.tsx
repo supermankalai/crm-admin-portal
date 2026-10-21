@@ -31,6 +31,8 @@ const ICON: Record<NotificationType, LucideIcon> = {
   PT_SESSION_REMINDER: CalendarClock,
   PT_CREDITS_LOW: Dumbbell,
   PT_PACKAGE_EXPIRING: Dumbbell,
+  LIVE_CLASS_STARTING: CalendarClock,
+  LIVE_PT_STARTING: CalendarClock,
   // Member-only kinds (never sent to staff), mapped for completeness.
   CLASS_REMINDER: CalendarClock,
   WAITLIST_PROMOTED: Users,

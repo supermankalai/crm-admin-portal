@@ -7,6 +7,7 @@ import { useOnline } from "@/hooks/use-online";
 import { useSession } from "@/hooks/use-session";
 import { errorMessage } from "@/lib/errors";
 import { exerciseLine } from "@/lib/fitness";
+import { JoinLiveButton } from "@/components/live-join";
 import { useCompleteWorkout, useMemberSessions, useMemberWorkouts, type MemberWorkouts } from "@/lib/fitness-queries";
 import { dateTime, dayLabel, time } from "@/lib/format";
 
@@ -28,14 +29,16 @@ export default function WorkoutsTab() {
             Personal training
           </Text>
           {upcoming.map((s) => (
-            <View key={s.id} accessible className="gap-0.5">
+            <View key={s.id} className="gap-1">
               <Text className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
                 {dayLabel(s.startsAt, tz)} · {time(s.startsAt, tz)}
               </Text>
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
                 With {s.trainer}
                 {s.focus ? ` · ${s.focus}` : ""}
+                {s.deliveryMode === "ONLINE" ? " · Online" : ""}
               </Text>
+              <JoinLiveButton link={{ kind: "pt", sessionId: s.id }} mode={s.deliveryMode} startsAt={s.startsAt} endsAt={s.endsAt} timeZone={tz} label="Join your session" />
             </View>
           ))}
         </Card>

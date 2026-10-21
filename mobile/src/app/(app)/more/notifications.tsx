@@ -6,6 +6,7 @@ import { useSession } from "@/hooks/use-session";
 import { errorMessage } from "@/lib/errors";
 import { dateTime } from "@/lib/format";
 import { targetRoute, useInbox, useReadAll, useReadNotification, type InboxItem } from "@/lib/inbox-queries";
+import { liveHref } from "@/lib/live";
 
 const ICON: Partial<Record<InboxItem["type"], keyof typeof Ionicons.glyphMap>> = {
   CLASS_REMINDER: "alarm-outline",
@@ -15,6 +16,8 @@ const ICON: Partial<Record<InboxItem["type"], keyof typeof Ionicons.glyphMap>> =
   PAYMENT_OVERDUE: "wallet-outline",
   ANNOUNCEMENT: "megaphone-outline",
   CLASS_FULL: "people-outline",
+  LIVE_CLASS_STARTING: "videocam-outline",
+  LIVE_PT_STARTING: "videocam-outline",
 };
 
 /** Your notifications in this gym. Tapping one marks it read and opens what it's about. */
@@ -30,6 +33,8 @@ export default function InboxScreen() {
 
   const open = (n: InboxItem) => {
     if (!n.readAt) read.mutate(n.id);
+    // An online session about to start: its call.
+    if (n.live) return void router.push(liveHref(n.live));
     // Only where this role has a screen (e.g. members have no Alerts tab).
     const route = targetRoute(n.target, gym?.role);
     if (route) router.push(route);

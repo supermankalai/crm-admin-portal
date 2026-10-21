@@ -244,6 +244,9 @@ export const memberMembershipResponseSchema = z.object({
 
 export const classesQuerySchema = z.object({ from: dateOnly.optional(), to: dateOnly.optional() });
 
+/** How a class or PT session is delivered (docs/LIVE_SESSIONS.md). */
+export const deliveryModeSchema = z.enum(["IN_PERSON", "ONLINE", "HYBRID"]);
+
 export const memberClassSchema = z.object({
   id: z.string(),
   startsAt: isoDateTime,
@@ -258,6 +261,7 @@ export const memberClassSchema = z.object({
   capacity: z.number().int(),
   booked: z.number().int(),
   waitlisted: z.number().int(),
+  deliveryMode: deliveryModeSchema,
   spotsLeft: z.number().int(),
   my: z.object({ bookingId: z.string(), status: z.enum(["BOOKED", "WAITLISTED", "ATTENDED", "NO_SHOW"]), waitlistPosition: z.number().int().nullable() }).nullable(),
   canBook: z.boolean(),
@@ -554,11 +558,12 @@ export const trainingSessionItemSchema = z.object({
   focus: z.string().nullable(),
   trainer: z.string(),
   member: z.object({ id: z.string(), name: z.string() }),
+  deliveryMode: deliveryModeSchema,
 });
 
 export const scheduleItemSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("class"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, title: z.string(), color: z.string(), room: z.string(), booked: z.number().int(), capacity: z.number().int(), status: z.string() }),
-  z.object({ kind: z.literal("pt"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, member: z.object({ id: z.string(), name: z.string() }), focus: z.string().nullable(), status: z.string() }),
+  z.object({ kind: z.literal("class"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, title: z.string(), color: z.string(), room: z.string(), booked: z.number().int(), capacity: z.number().int(), status: z.string(), deliveryMode: deliveryModeSchema }),
+  z.object({ kind: z.literal("pt"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, member: z.object({ id: z.string(), name: z.string() }), focus: z.string().nullable(), status: z.string(), deliveryMode: deliveryModeSchema }),
   z.object({ kind: z.literal("shift"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, location: z.string() }),
 ]);
 
@@ -638,6 +643,8 @@ export const notificationTypeSchema = z.enum([
   "PT_SESSION_REMINDER",
   "PT_CREDITS_LOW",
   "PT_PACKAGE_EXPIRING",
+  "LIVE_CLASS_STARTING",
+  "LIVE_PT_STARTING",
 ]);
 
 export const notificationIdParamsSchema = z.object({ notificationId: z.string().min(1).max(64) });
@@ -649,6 +656,8 @@ export const notificationItemSchema = z.object({
   body: z.string(),
   /** Where tapping it should go in the app (screen key), if anywhere. */
   target: z.enum(["classes", "membership", "payments", "announcements", "alerts", "members"]).nullable(),
+  /** A live session's call (its "starts soon" alert): open the pre-join screen. */
+  live: z.object({ kind: z.enum(["class", "pt"]), sessionId: z.string() }).nullable(),
   readAt: isoDateTime.nullable(),
   createdAt: isoDateTime,
 });

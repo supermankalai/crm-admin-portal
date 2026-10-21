@@ -80,6 +80,8 @@ export default function RootLayout() {
               </Stack.Protected>
               <Stack.Protected guard={s.phase === "signedIn" && !!s.gym}>
                 <Stack.Screen name="(app)" />
+                {/* Online classes and PT sessions (LiveKit video). */}
+                <Stack.Screen name="live/[kind]/[sessionId]" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
               </Stack.Protected>
               <Stack.Screen name="app/invite/[token]" />
             </Stack>
