@@ -1,8 +1,10 @@
 import "server-only";
 import { addDays, dayBounds, formatDateTime, fromDateString, isDateString, localDate, toDateString } from "@/domain/dates";
 import { can } from "@/domain/permissions";
+import { hasVideoRoom, liveRoomName } from "@/domain/live";
 import { pickPackage, ptSessionBookedText, ptSessionCancelledText } from "@/domain/pt";
 import { recordAudit } from "@/server/audit/tenant-audit";
+import { closeLiveRoom } from "../live/rooms";
 import type { Tx } from "@/server/db/context";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
 import type { RequestMeta } from "@/server/security/request-meta";
@@ -130,10 +132,10 @@ export async function closeSession(ctx: TenantContext, id: string, status: "COMP
   const c = coach(ctx);
   assertWritable(ctx);
   const isManager = can(ctx.role, "pt.manage");
-  return inTenant(ctx, async (tx) => {
+  const result = await inTenant(ctx, async (tx) => {
     const s = await tx.trainingSession.findFirst({
       where: { id },
-      select: { id: true, trainerId: true, memberId: true, status: true, startsAt: true, member: { select: { firstName: true, lastName: true } }, trainer: { select: { user: { select: { name: true } } } } },
+      select: { id: true, trainerId: true, memberId: true, status: true, startsAt: true, deliveryMode: true, member: { select: { firstName: true, lastName: true } }, trainer: { select: { user: { select: { name: true } } } } },
     });
     if (!s) throw new NotFoundError("Session not found.");
     if (!isManager && s.trainerId !== c.staffId) throw new ForbiddenError("You can only change your own sessions.");
@@ -152,8 +154,12 @@ export async function closeSession(ctx: TenantContext, id: string, status: "COMP
         trainerUser ? { userId: trainerUser, type: "PT_SESSION_CANCELLED", ...ptSessionCancelledText(fullName(s.member), when), entityType: "TrainingSession", entityId: s.id, subject: s.id } : null,
       ]);
     }
-    return { ok: true as const };
+    return { closeRoom: status === "CANCELLED" && hasVideoRoom(s.deliveryMode) };
   });
+  // A cancelled online session's call ends now. (Done or no-show: no new joins, and the call
+  // closes when its window does.)
+  if (result.closeRoom) await closeLiveRoom(liveRoomName(ctx.gym.id, "pt", id));
+  return { ok: true as const };
 }
 
 export type SessionFilters = { from?: string; to?: string; trainerId?: string; status?: "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW" };

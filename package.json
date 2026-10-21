@@ -24,7 +24,8 @@
     "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts",
     "openapi:generate": "tsx scripts/openapi.ts",
     "dev:lan": "next dev -H 0.0.0.0",
-    "jobs:watch": "tsx --conditions=react-server scripts/jobs-run.ts --watch"
+    "jobs:watch": "tsx --conditions=react-server scripts/jobs-run.ts --watch",
+    "live:check": "tsx --conditions=react-server scripts/live-check.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -44,6 +45,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "jose": "^6.2.12",
+    "livekit-server-sdk": "^2.19.1",
     "lucide-react": "^1.49.0",
     "next": "^16.3.8",
     "next-auth": "^5.0.0-beta.32",

@@ -92,7 +92,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ g
                     <li key={c.id}>
                       <Link href={`/g/${gymSlug}/classes/${c.id}`} className="flex items-center gap-2 hover:underline">
                         <span className="size-2 rounded-full" style={{ backgroundColor: c.classType.color }} aria-hidden />
-                        {when.format(c.startsAt)} {localTime(c.startsAt, tz)} · {c.classType.name} · {c.room.name}
+                        {when.format(c.startsAt)} {localTime(c.startsAt, tz)} · {c.classType.name} · {c.room?.name ?? "Online"}
                       </Link>
                     </li>
                   ))}

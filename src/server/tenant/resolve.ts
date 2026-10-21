@@ -37,6 +37,7 @@ const GYM_SELECT = {
           featureClassBookings: true,
           featureMobileApp: true,
           featureMemberApp: true,
+          featureLiveSessions: true,
         },
       },
     },
@@ -71,6 +72,7 @@ type GymRow = {
       featureClassBookings: boolean;
       featureMobileApp: boolean;
       featureMemberApp: boolean;
+      featureLiveSessions: boolean;
     };
   } | null;
 };
@@ -104,6 +106,7 @@ function buildContext(
             classBookings: plan.featureClassBookings,
             mobileApp: plan.featureMobileApp,
             memberApp: plan.featureMemberApp,
+            liveSessions: plan.featureLiveSessions,
           },
         }
       : null,

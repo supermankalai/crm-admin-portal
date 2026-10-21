@@ -208,7 +208,8 @@ export async function seedFitness(db: PrismaClient) {
         // second client (who is then down to 1 left). Every third client has none (sessions not covered).
         const purchaseId = owner && (isDemo || c % 3 !== 2) ? await sellSeedPackage(db, gymId, memberId, trainer.id, owner.id, c === 1 ? catalog.six : catalog.ten) : null;
 
-        // PT sessions: three past, two upcoming (early mornings, before group classes).
+        // PT sessions: three past, two upcoming (early mornings, before group classes). Each trainer's
+        // first client trains online now and then (a video call, see docs/LIVE_SESSIONS.md).
         const sessions = [-21, -14, -7, 2, 9].map((day, i) => ({
           purchaseId,
           gymId,
@@ -219,9 +220,21 @@ export async function seedFitness(db: PrismaClient) {
           status: day > 0 ? ("SCHEDULED" as const) : i === 1 && !isDemo ? ("NO_SHOW" as const) : ("COMPLETED" as const),
           focus: ["Technique check", "Progress review", "Conditioning", "New programme walkthrough", "Mobility"][i],
           bookedById: trainer.id,
+          deliveryMode: c === 0 && (i === 0 || i === 4) ? ("ONLINE" as const) : ("IN_PERSON" as const),
         }));
         // Spread trainers' clients across days so a trainer never has two at once.
         await db.trainingSession.createMany({ data: sessions.map((s) => ({ ...s, startsAt: new Date(s.startsAt.getTime() + c * 86_400_000), endsAt: new Date(s.endsAt.getTime() + c * 86_400_000) })) });
+        // Who was in the past online call, and for how long (normally recorded by LiveKit's webhook).
+        const call = c === 0 ? await db.trainingSession.findFirst({ where: { gymId, trainerId: trainer.id, memberId, deliveryMode: "ONLINE", status: "COMPLETED" }, select: { id: true, startsAt: true, endsAt: true } }) : null;
+        if (call) {
+          const plus = (d: Date, min: number) => new Date(d.getTime() + min * 60_000);
+          await db.liveAttendance.createMany({
+            data: [
+              { gymId, kind: "PT", sessionId: call.id, staffId: trainer.id, firstJoinedAt: plus(call.startsAt, -4), lastLeftAt: plus(call.endsAt, 1), seconds: 65 * 60 },
+              { gymId, kind: "PT", sessionId: call.id, memberId, firstJoinedAt: plus(call.startsAt, 2), lastLeftAt: plus(call.endsAt, -2), seconds: 56 * 60 },
+            ],
+          });
+        }
 
         // Progress photos for the demo member.
         if (isDemo) {

@@ -70,7 +70,7 @@ export default async function SchedulePage({ params, searchParams }: { params: P
                     <li key={c.id}>
                       <Link href={`/g/${ctx.gym.slug}/classes/${c.id}`} className={cn("flex items-center gap-2 hover:underline", c.status === "CANCELLED" && "line-through opacity-60")}>
                         <span className="size-2 rounded-full" style={{ backgroundColor: c.classType.color }} aria-hidden />
-                        {localTime(c.startsAt, tz)} {c.classType.name} · {c.room.name} · {c._count.bookings}/{c.capacity} booked
+                        {localTime(c.startsAt, tz)} {c.classType.name} · {c.room?.name ?? "Online"} · {c._count.bookings}/{c.capacity} booked
                       </Link>
                     </li>
                   ))}

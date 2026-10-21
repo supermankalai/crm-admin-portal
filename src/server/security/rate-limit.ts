@@ -31,6 +31,8 @@ export const RATE_LIMITS = {
   passwordChangePerUser: { name: "password:user", limit: 5, windowSeconds: 15 * 60 },
   passwordResetPerIp: { name: "reset:ip", limit: 5, windowSeconds: 60 * 60 },
   passwordResetPerEmail: { name: "reset:email", limit: 3, windowSeconds: 60 * 60 },
+  // Live session join tokens (each one is a signed LiveKit token; reconnects ask again).
+  liveJoinPerUser: { name: "live:join", limit: 30, windowSeconds: 15 * 60 },
 } satisfies Record<string, RateLimitRule>;
 
 export class RateLimitError extends Error {

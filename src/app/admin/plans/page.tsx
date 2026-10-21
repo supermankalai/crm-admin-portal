@@ -39,6 +39,7 @@ export default async function AdminPlansPage() {
                   featureClassBookings: p.featureClassBookings,
                   featureMobileApp: p.featureMobileApp,
                   featureMemberApp: p.featureMemberApp,
+                  featureLiveSessions: p.featureLiveSessions,
                   isActive: p.isActive,
                 }}
               />

@@ -125,11 +125,13 @@ type ScheduleRow = {
   class_name: string;
   class_color: string;
   class_description: string | null;
-  room_name: string;
-  location_name: string;
+  /** Null for an online class. */
+  room_name: string | null;
+  location_name: string | null;
   trainer_name: string;
   booked: number;
   waitlisted: number;
+  delivery_mode: "IN_PERSON" | "ONLINE" | "HYBRID";
 };
 
 /** The timetable from today to the end of the booking window (or a range within it). */
@@ -174,8 +176,8 @@ export async function memberClasses(ctx: MemberContext, query: { from?: string; 
         className: r.class_name,
         classColor: r.class_color,
         description: r.class_description,
-        room: r.room_name,
-        location: r.location_name,
+        room: r.room_name ?? "Online",
+        location: r.location_name ?? "Online",
         trainer: r.trainer_name,
         capacity: r.capacity,
         booked: r.booked,

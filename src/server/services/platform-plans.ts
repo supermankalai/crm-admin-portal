@@ -21,6 +21,7 @@ export function listPublicPlans() {
         featureClassBookings: true,
         featureMobileApp: true,
         featureMemberApp: true,
+        featureLiveSessions: true,
       },
     })
   );

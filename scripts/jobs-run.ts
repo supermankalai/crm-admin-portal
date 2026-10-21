@@ -11,6 +11,7 @@
  *   active gym. Idempotent: each alert has a dedupe key, so re-runs never repeat one.
  * - Sends push alerts for new notifications and checks Expo's delivery receipts (invalid device
  *   tokens are dropped). PUSH_PROVIDER=dev-outbox writes them to .dev-outbox/*.push.json.
+ * - Closes LiveKit rooms of live sessions that have ended or were cancelled (when LIVEKIT_* is set).
  *
  *   npm run jobs:watch   runs it every minute (handy while testing reminders and push locally).
  *
@@ -26,6 +27,7 @@ async function runOnce() {
   const { generateGymNotifications } = await import("@/server/notifications");
   const { getPushProvider } = await import("@/server/push/provider");
   const { checkPushReceipts, deliverPendingPushes } = await import("@/server/push/deliver");
+  const { closeEndedLiveRooms } = await import("@/server/services/live/close-ended");
   const env = getEnv();
   if (!env.MIGRATION_DATABASE_URL) throw new Error("MIGRATION_DATABASE_URL is required");
   const db = createPrismaClient(env.MIGRATION_DATABASE_URL, env.DATABASE_SCHEMA, 1);
@@ -50,7 +52,13 @@ async function runOnce() {
     } catch (error) {
       console.error(JSON.stringify({ job: "push", error: error instanceof Error ? error.message : "unknown" }));
     }
-    console.log(JSON.stringify({ job: "jobs:run", expiredSubscriptions: Number(expired.n), staleRateLimitBuckets: buckets.count, gyms: gyms.length, notificationsCreated: notifications, push, at: new Date().toISOString() }));
+    let liveRooms: object = {};
+    try {
+      liveRooms = await closeEndedLiveRooms(db);
+    } catch (error) {
+      console.error(JSON.stringify({ job: "live-rooms", error: error instanceof Error ? error.message : "unknown" }));
+    }
+    console.log(JSON.stringify({ job: "jobs:run", expiredSubscriptions: Number(expired.n), staleRateLimitBuckets: buckets.count, gyms: gyms.length, notificationsCreated: notifications, push, liveRooms, at: new Date().toISOString() }));
   } finally {
     await db.$disconnect();
   }

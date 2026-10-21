@@ -114,6 +114,14 @@ enum ClassSessionStatus {
   COMPLETED
 }
 
+/// Where a class or PT session happens. ONLINE and HYBRID sessions have a LiveKit video room
+/// (docs/LIVE_SESSIONS.md); an ONLINE class has no physical room. PT sessions are never HYBRID.
+enum DeliveryMode {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
 enum BookingStatus {
   BOOKED
   WAITLISTED
@@ -216,6 +224,8 @@ model PlatformPlan {
   featureMobileApp     Boolean  @default(false)
   /// Member app accounts (card, booking, workouts…).
   featureMemberApp     Boolean  @default(false)
+  /// Online PT sessions and live classes (LiveKit video).
+  featureLiveSessions  Boolean  @default(false)
   sortOrder            Int      @default(0)
   isActive             Boolean  @default(true)
   createdAt            DateTime @default(now()) @db.Timestamptz(3)
@@ -290,6 +300,7 @@ model Gym {
   ptAssignmentHistory PtAssignmentHistory[]
   ptPackages          PtPackage[]
   ptPurchases         PtPackagePurchase[]
+  liveAttendance      LiveAttendance[]
 }
 
 model GymSubscription {
@@ -418,6 +429,7 @@ model StaffMember {
   trainingSessions TrainingSession[]        @relation("PtSessionTrainer")
   announcements    Announcement[]
   deletionsHandled AccountDeletionRequest[]
+  liveAttendance   LiveAttendance[]
 
   @@unique([gymId, id])
   @@unique([gymId, userId])
@@ -638,6 +650,7 @@ model Member {
   deletionRequests   AccountDeletionRequest[]
   ptHistory          PtAssignmentHistory[]
   ptPurchases        PtPackagePurchase[]
+  liveAttendance     LiveAttendance[]
 
   @@unique([gymId, id])
   @@unique([gymId, memberNumber])
@@ -843,22 +856,24 @@ model ClassType {
 }
 
 model ClassSession {
-  id          String             @id @default(cuid(2))
-  gymId       String
-  classTypeId String
-  trainerId   String
-  roomId      String
-  startsAt    DateTime           @db.Timestamptz(3)
-  endsAt      DateTime           @db.Timestamptz(3)
-  capacity    Int
-  status      ClassSessionStatus @default(SCHEDULED)
-  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime           @updatedAt @db.Timestamptz(3)
+  id           String             @id @default(cuid(2))
+  gymId        String
+  classTypeId  String
+  trainerId    String
+  /// Null only for ONLINE classes (a check constraint enforces it).
+  roomId       String?
+  startsAt     DateTime           @db.Timestamptz(3)
+  endsAt       DateTime           @db.Timestamptz(3)
+  capacity     Int
+  status       ClassSessionStatus @default(SCHEDULED)
+  deliveryMode DeliveryMode       @default(IN_PERSON)
+  createdAt    DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime           @updatedAt @db.Timestamptz(3)
 
   gym       Gym         @relation(fields: [gymId], references: [id])
   classType ClassType   @relation(fields: [gymId, classTypeId], references: [gymId, id])
   trainer   StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
-  room      Room        @relation(fields: [gymId, roomId], references: [gymId, id])
+  room      Room?       @relation(fields: [gymId, roomId], references: [gymId, id])
   bookings  Booking[]
 
   @@unique([gymId, id])
@@ -1238,6 +1253,8 @@ model TrainingSession {
   purchaseId    String?
   /// Booked by a manager without a credit, on the house.
   complimentary Boolean               @default(false)
+  /// IN_PERSON or ONLINE (a video call in LiveKit).
+  deliveryMode  DeliveryMode          @default(IN_PERSON)
   createdAt     DateTime              @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
 
@@ -1428,4 +1445,39 @@ model AccountDeletionRequest {
   resolvedBy StaffMember? @relation(fields: [gymId, resolvedById], references: [gymId, id])
 
   @@index([gymId, status, createdAt])
+}
+
+// ─────────────────────────── Live sessions (LiveKit) ───────────────────────────
+
+enum LiveRoomKind {
+  CLASS
+  PT
+}
+
+/// Who was in an online class or PT call, and for how long, as reported by LiveKit's webhook.
+/// One row per person per session. Written only by app_record_live_event() (the webhook carries
+/// no user), read by staff of the gym and by the member for their own rows.
+model LiveAttendance {
+  id            String       @id @default(cuid(2))
+  gymId         String
+  kind          LiveRoomKind
+  /// ClassSession.id or TrainingSession.id, per `kind` (checked by app_record_live_event).
+  sessionId     String
+  memberId      String?
+  staffId       String?
+  firstJoinedAt DateTime     @db.Timestamptz(3)
+  lastLeftAt    DateTime?    @db.Timestamptz(3)
+  /// Set while connected; the time is added to `seconds` on leaving.
+  connectedAt   DateTime?    @db.Timestamptz(3)
+  seconds       Int          @default(0)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+
+  gym    Gym          @relation(fields: [gymId], references: [id])
+  member Member?      @relation(fields: [gymId, memberId], references: [gymId, id])
+  staff  StaffMember? @relation(fields: [gymId, staffId], references: [gymId, id])
+
+  @@unique([gymId, kind, sessionId, memberId])
+  @@unique([gymId, kind, sessionId, staffId])
+  @@index([gymId, kind, sessionId])
 }

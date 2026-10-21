@@ -1,6 +1,7 @@
 import "server-only";
 import { addDays, dayBounds, localDate, localDateTime } from "@/domain/dates";
 import { ClassRuleError, overlaps, refundsCredit } from "@/domain/classes";
+import { hasVideoRoom, liveRoomName } from "@/domain/live";
 import { recordAudit } from "@/server/audit/tenant-audit";
 import type { Tx } from "@/server/db/context";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
@@ -8,6 +9,7 @@ import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import type { SessionInput } from "@/lib/validation/classes";
+import { closeLiveRoom } from "../live/rooms";
 import { lockClassSession } from "./lock";
 
 /** Trainers (no classes.manage and no classes.book) only see and manage their own classes. */
@@ -71,7 +73,7 @@ export async function listWeek(ctx: TenantContext, monday: string, filters: { tr
   });
 }
 
-async function assertNoConflicts(tx: Tx, slots: { startsAt: Date; endsAt: Date }[], trainerId: string, roomId: string, ignoreSessionId?: string) {
+async function assertNoConflicts(tx: Tx, slots: { startsAt: Date; endsAt: Date }[], trainerId: string, roomId: string | null, ignoreSessionId?: string) {
   for (let i = 0; i < slots.length; i++) {
     for (let j = i + 1; j < slots.length; j++) if (overlaps(slots[i], slots[j])) throw new ValidationError("These repeating classes overlap each other.");
   }
@@ -82,12 +84,13 @@ async function assertNoConflicts(tx: Tx, slots: { startsAt: Date; endsAt: Date }
         id: ignoreSessionId ? { not: ignoreSessionId } : undefined,
         startsAt: { lt: slot.endsAt },
         endsAt: { gt: slot.startsAt },
-        OR: [{ trainerId }, { roomId }],
+        // An online class has no room to clash over, only its trainer.
+        OR: roomId ? [{ trainerId }, { roomId }] : [{ trainerId }],
       },
       select: { trainerId: true, startsAt: true, classType: { select: { name: true } }, room: { select: { name: true } } },
     });
     if (clash) {
-      const who = clash.trainerId === trainerId ? "The trainer is already teaching" : `${clash.room.name} is already booked for`;
+      const who = clash.trainerId === trainerId ? "The trainer is already teaching" : `${clash.room?.name ?? "The room"} is already booked for`;
       throw new ValidationError(`${who} ${clash.classType.name} at that time (${clash.startsAt.toISOString().slice(0, 16).replace("T", " ")} UTC).`);
     }
   }
@@ -182,10 +185,13 @@ export async function updateSession(ctx: TenantContext, input: { sessionId: stri
   });
 }
 
-/** Cancel a class: every booking is cancelled and class-pack credits are given back. */
+/**
+ * Cancel a class: every booking is cancelled and class-pack credits are given back. An online or
+ * hybrid class's video room is closed, which disconnects anyone already in it.
+ */
 export async function cancelSession(ctx: TenantContext, sessionId: string, reason: string, meta: RequestMeta) {
   assertCan(ctx, "classes.view");
-  return inTenant(ctx, async (tx) => {
+  const result = await inTenant(ctx, async (tx) => {
     const session = await lockClassSession(tx, sessionId);
     assertCanManageSession(ctx, session);
     if (session.status !== "SCHEDULED") throw new ValidationError("This class is not scheduled.");
@@ -200,6 +206,8 @@ export async function cancelSession(ctx: TenantContext, sessionId: string, reaso
     await tx.booking.updateMany({ where: { sessionId, status: { in: ["BOOKED", "WAITLISTED"] } }, data: { status: "CANCELLED", waitlistPosition: null, cancelledAt: new Date() } });
     await tx.classSession.update({ where: { id: sessionId }, data: { status: "CANCELLED" }, select: { id: true } });
     await recordAudit(tx, ctx, { action: "class.cancel", entityType: "ClassSession", entityId: sessionId, changes: { reason, bookingsCancelled: active.length } }, meta);
-    return { bookingsCancelled: active.length };
+    return { bookingsCancelled: active.length, videoRoom: hasVideoRoom(session.deliveryMode) };
   });
+  if (result.videoRoom) await closeLiveRoom(liveRoomName(ctx.gym.id, "class", sessionId));
+  return { bookingsCancelled: result.bookingsCancelled };
 }

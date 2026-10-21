@@ -705,3 +705,24 @@ export const memberProfileResponseSchema = z.object({
 
 export const deletionRequestSchema = z.object({ reason: z.string().trim().max(500).transform((v) => (v === "" ? null : v)), confirm: z.literal(true, "Please confirm you understand") });
 export const deletionRequestResponseSchema = z.object({ status: z.literal("REQUESTED"), requestedAt: isoDateTime });
+
+// ─────────────────────────────── Live sessions (LiveKit) ───────────────────────────────
+
+export const liveJoinParamsSchema = z.object({ kind: z.enum(["class", "pt"]), sessionId: z.string().min(1).max(64) });
+/** Connect to `url` with `token` (LiveKit). The token works for this room only, until `expiresAt`. */
+export const liveJoinResponseSchema = z.object({
+  url: z.string(),
+  token: z.string(),
+  roomName: z.string(),
+  identity: z.string(),
+  role: z.enum(["host", "coach", "member"]),
+  expiresAt: isoDateTime,
+  session: z.object({
+    kind: z.enum(["class", "pt"]),
+    id: z.string(),
+    title: z.string(),
+    startsAt: isoDateTime,
+    endsAt: isoDateTime,
+    deliveryMode: z.enum(["IN_PERSON", "ONLINE", "HYBRID"]),
+  }),
+});

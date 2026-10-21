@@ -52,7 +52,7 @@ export async function trainerSchedule(ctx: TenantContext, query: { from?: string
       tx.staffShift.findMany({ where: { staffId, ...overlaps }, select: { id: true, startsAt: true, endsAt: true, location: { select: { name: true } } } }),
     ]);
     const items = [
-      ...classes.map((c) => ({ kind: "class" as const, id: c.id, startsAt: c.startsAt, endsAt: c.endsAt, title: c.classType.name, color: c.classType.color, room: c.room.name, booked: c.bookings.length, capacity: c.capacity, status: c.status })),
+      ...classes.map((c) => ({ kind: "class" as const, id: c.id, startsAt: c.startsAt, endsAt: c.endsAt, title: c.classType.name, color: c.classType.color, room: c.room?.name ?? "Online", booked: c.bookings.length, capacity: c.capacity, status: c.status })),
       ...pts.map((p) => ({ kind: "pt" as const, id: p.id, startsAt: p.startsAt, endsAt: p.endsAt, member: { id: p.member.id, name: fullName(p.member) }, focus: p.focus, status: p.status })),
       ...shifts.map((s) => ({ kind: "shift" as const, id: s.id, startsAt: s.startsAt, endsAt: s.endsAt, location: s.location.name })),
     ].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime() || (a.kind === "shift" ? -1 : 1));

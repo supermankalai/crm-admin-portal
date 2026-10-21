@@ -65,3 +65,6 @@ REVOKE ALL ON "gym-admin-portal"."PushDelivery" FROM gym_app;
 -- Announcements are never edited after publishing; deletion requests are never deleted.
 REVOKE UPDATE ON "gym-admin-portal"."Announcement" FROM gym_app;
 REVOKE DELETE ON "gym-admin-portal"."AccountDeletionRequest" FROM gym_app;
+
+-- Live session attendance is written only by app_record_live_event() (the LiveKit webhook).
+REVOKE INSERT, UPDATE, DELETE ON "gym-admin-portal"."LiveAttendance" FROM gym_app;

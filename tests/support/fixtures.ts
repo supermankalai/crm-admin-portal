@@ -11,7 +11,7 @@ export async function createTwoGyms() {
   const mk = () => createId();
 
   await db.platformPlan.create({
-    data: { id: mk(), code: "TEST", name: "Test", priceMonthlyMinor: 0, maxMembers: 10, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, featureMobileApp: true, featureMemberApp: true },
+    data: { id: mk(), code: "TEST", name: "Test", priceMonthlyMinor: 0, maxMembers: 10, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, featureMobileApp: true, featureMemberApp: true, featureLiveSessions: true },
   });
 
   const users = {

@@ -76,7 +76,7 @@ export default async function SessionPage({ params }: { params: Promise<{ gymSlu
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{session.classType.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {date} · {localTime(session.startsAt, tz)}–{localTime(session.endsAt, tz)} · {session.room.location.name}, {session.room.name} · with {session.trainer.user.name}
+              {date} · {localTime(session.startsAt, tz)}–{localTime(session.endsAt, tz)} · {session.room ? `${session.room.location.name}, ${session.room.name}` : "Online"} · with {session.trainer.user.name}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {session.status === "CANCELLED" ? <Badge variant="danger">Cancelled</Badge> : <Badge variant={confirmed.length >= session.capacity ? "warning" : "secondary"}>{confirmed.length}/{session.capacity} booked</Badge>}
@@ -84,9 +84,10 @@ export default async function SessionPage({ params }: { params: Promise<{ gymSlu
             </div>
           </div>
         </div>
-        {canManage && upcoming && setup && (
+        {/* Online classes (no room) get their own edit form with the live-session screens. */}
+        {canManage && upcoming && setup && session.roomId !== null && (
           <div className="flex flex-wrap gap-2">
-            <EditSession gymSlug={gymSlug} session={session} rooms={setup.rooms} trainers={setup.trainers} canChangeStaffing={hasPermission(ctx, "classes.manage")} />
+            <EditSession gymSlug={gymSlug} session={{ ...session, roomId: session.roomId }} rooms={setup.rooms} trainers={setup.trainers} canChangeStaffing={hasPermission(ctx, "classes.manage")} />
             <CancelSession gymSlug={gymSlug} sessionId={session.id} booked={confirmed.length} />
           </div>
         )}
