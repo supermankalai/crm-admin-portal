@@ -4,11 +4,14 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
+import { DeliveryBadge, JoinCallButton } from "@/components/live/live-ui";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { addDays, formatDate, isDateString, localDate, localTime } from "@/domain/dates";
+import { liveAttendance, presenceLabel } from "@/server/services/live/attendance";
+import { liveSessionsAvailable } from "@/server/services/live/join";
 import { todayFor } from "@/server/services/members/shared";
 import { listTrainers } from "@/server/services/pt/clients";
 import { listSessions } from "@/server/services/pt/sessions";
@@ -34,6 +37,8 @@ export default async function PtSessionsPage({ params, searchParams }: { params:
     isManager ? listTrainers(ctx) : Promise.resolve([]),
   ]);
   const slug = ctx.gym.slug;
+  // Who joined the online sessions (from LiveKit's webhook).
+  const presence = await liveAttendance(ctx, "pt", sessions.filter((s) => s.deliveryMode === "ONLINE").map((s) => s.id));
   const tz = ctx.gym.timezone;
   const canWrite = ctx.access.writable && !ctx.supportSessionId;
   const now = new Date().getTime();
@@ -52,7 +57,7 @@ export default async function PtSessionsPage({ params, searchParams }: { params:
       <PageHeader
         title="PT sessions"
         description={isManager ? "Every personal training session in the gym. Close sessions once they've happened." : "Your personal training sessions. Close them once they've happened."}
-        actions={canWrite && <BookSessionDialog gymSlug={slug} today={today} trainers={isManager ? trainers : []} defaultTrainerId={sp.trainer} canComplimentary={isManager} />}
+        actions={canWrite && <BookSessionDialog gymSlug={slug} today={today} trainers={isManager ? trainers : []} defaultTrainerId={sp.trainer} canComplimentary={isManager} canBookOnline={liveSessionsAvailable(ctx)} />}
       />
       <PtTabs slug={slug} active="sessions" />
 
@@ -144,7 +149,12 @@ export default async function PtSessionsPage({ params, searchParams }: { params:
                           </Link>
                         </TableCell>
                         {isManager && <TableCell className="text-sm">{s.trainer.name}</TableCell>}
-                        <TableCell className="text-sm text-muted-foreground">{s.focus ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {s.focus ?? "—"} <DeliveryBadge mode={s.deliveryMode} />
+                          </div>
+                          {presence.get(s.id)?.get(s.member.id) && <div className="text-xs text-sky-700 dark:text-sky-400">Client {presenceLabel(presence.get(s.id)!.get(s.member.id)!)}</div>}
+                        </TableCell>
                         <TableCell className={s.cover || s.status === "CANCELLED" ? "text-sm text-muted-foreground" : "text-sm text-amber-700 dark:text-amber-400"}>
                           {s.status === "CANCELLED" ? "—" : (s.cover ?? "Not covered")}
                         </TableCell>
@@ -152,7 +162,10 @@ export default async function PtSessionsPage({ params, searchParams }: { params:
                           <SessionStatusBadge status={s.status} />
                         </TableCell>
                         <TableCell className="text-right">
-                          {canWrite && s.canChange && s.status === "SCHEDULED" && <SessionActions gymSlug={slug} sessionId={s.id} started={started} label={label} />}
+                          <div className="flex flex-wrap items-center justify-end gap-1">
+                            {s.isMine && s.deliveryMode === "ONLINE" && s.status === "SCHEDULED" && <JoinCallButton gymSlug={slug} kind="pt" sessionId={s.id} startsAt={s.startsAt} endsAt={s.endsAt} timeZone={tz} />}
+                            {canWrite && s.canChange && s.status === "SCHEDULED" && <SessionActions gymSlug={slug} sessionId={s.id} started={started} label={label} />}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

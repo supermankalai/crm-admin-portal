@@ -101,7 +101,7 @@ export function EditSession({
   canChangeStaffing,
 }: {
   gymSlug: string;
-  session: { id: string; trainerId: string; roomId: string; capacity: number };
+  session: { id: string; trainerId: string; roomId: string | null; capacity: number; deliveryMode: "IN_PERSON" | "ONLINE" | "HYBRID" };
   rooms: { id: string; name: string; capacity: number }[];
   trainers: { id: string; name: string }[];
   canChangeStaffing: boolean;
@@ -109,7 +109,7 @@ export function EditSession({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const form = useForm<z.input<typeof sessionUpdateSchema>, unknown, z.output<typeof sessionUpdateSchema>>({ resolver: zodResolver(sessionUpdateSchema), defaultValues: { sessionId: session.id, trainerId: session.trainerId, roomId: session.roomId, capacity: session.capacity } });
+  const form = useForm<z.input<typeof sessionUpdateSchema>, unknown, z.output<typeof sessionUpdateSchema>>({ resolver: zodResolver(sessionUpdateSchema), defaultValues: { sessionId: session.id, trainerId: session.trainerId, roomId: session.roomId ?? "", capacity: session.capacity } });
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
@@ -135,7 +135,7 @@ export function EditSession({
           >
             <DialogHeader>
               <DialogTitle>Edit class</DialogTitle>
-              <DialogDescription>Raising capacity moves people off the waitlist in order.</DialogDescription>
+              <DialogDescription>Raising capacity moves people off the waitlist in order.{session.deliveryMode !== "IN_PERSON" && " Whether it's online stays as scheduled."}</DialogDescription>
             </DialogHeader>
             {canChangeStaffing && (
               <>
@@ -149,16 +149,18 @@ export function EditSession({
                     ))}
                   </NativeSelect>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-room">Room</Label>
-                  <NativeSelect id="edit-room" {...form.register("roomId")}>
-                    {rooms.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name} (max {r.capacity})
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
+                {session.deliveryMode !== "ONLINE" && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-room">Room</Label>
+                    <NativeSelect id="edit-room" {...form.register("roomId")}>
+                      {rooms.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name} (max {r.capacity})
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                )}
               </>
             )}
             <div className="grid gap-2">

@@ -78,3 +78,24 @@ describe("rights in the room", () => {
     expect(hasVideoRoom("HYBRID")).toBe(true);
   });
 });
+
+describe("scheduling and booking forms", () => {
+  const cls = { classTypeId: "t", trainerId: "s", date: "2026-11-02", startTime: "09:00", durationMinutes: 60, capacity: 10, repeatWeeks: 1 };
+
+  it("need a room unless the class is online", async () => {
+    const { sessionSchema } = await import("@/lib/validation/classes");
+    expect(sessionSchema.safeParse({ ...cls, roomId: "" }).success).toBe(false);
+    expect(sessionSchema.safeParse({ ...cls, deliveryMode: "HYBRID", roomId: "" }).success).toBe(false);
+    const online = sessionSchema.parse({ ...cls, deliveryMode: "ONLINE", roomId: "" });
+    expect(online).toMatchObject({ deliveryMode: "ONLINE", roomId: null });
+    expect(sessionSchema.parse({ ...cls, roomId: "r1" })).toMatchObject({ deliveryMode: "IN_PERSON", roomId: "r1" });
+  });
+
+  it("offer PT in person or online, never hybrid", async () => {
+    const { bookPtSessionSchema } = await import("@/lib/validation/pt");
+    const pt = { memberId: "m", date: "2026-11-02", startTime: "07:00", durationMinutes: 60, focus: "" };
+    expect(bookPtSessionSchema.parse(pt).deliveryMode).toBe("IN_PERSON");
+    expect(bookPtSessionSchema.parse({ ...pt, deliveryMode: "ONLINE" }).deliveryMode).toBe("ONLINE");
+    expect(bookPtSessionSchema.safeParse({ ...pt, deliveryMode: "HYBRID" }).success).toBe(false);
+  });
+});

@@ -51,7 +51,7 @@ export const endAssignmentAction = gymAction({ permission: "pt.manage", schema: 
 export const bookPtSessionAction = gymAction({ permission: "workouts.manage", schema: bookPtSessionSchema, write: true }, async (ctx, input) => {
   const r = await bookSession(
     ctx,
-    { trainerId: input.trainerId, memberId: input.memberId, startsAt: localDateTime(input.date, input.startTime, ctx.gym.timezone), durationMinutes: input.durationMinutes, focus: input.focus, complimentary: input.complimentary },
+    { trainerId: input.trainerId, memberId: input.memberId, startsAt: localDateTime(input.date, input.startTime, ctx.gym.timezone), durationMinutes: input.durationMinutes, focus: input.focus, complimentary: input.complimentary, deliveryMode: input.deliveryMode },
     await getRequestMeta()
   );
   refresh(ctx.gym.slug);

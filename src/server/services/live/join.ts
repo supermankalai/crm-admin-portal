@@ -10,6 +10,7 @@ import {
   liveIdentity,
   liveMaxParticipants,
   liveRoomName,
+  parseLiveIdentity,
   tokenTtlSeconds,
   type DeliveryMode,
   type LiveKind,
@@ -25,6 +26,7 @@ import { inMember, type MemberContext } from "@/server/tenant/member";
 import { inTenant } from "@/server/tenant/guards";
 import type { PlanSummary, TenantContext } from "@/server/tenant/types";
 import { liveKitConfig, type LiveKitConfig } from "./config";
+import { liveRoomAdmin } from "./rooms";
 
 /**
  * Joining a live session: check that this person may be in this session's room right now, then
@@ -60,6 +62,17 @@ type Session = {
 };
 
 const liveError = (code: string, message: string, status = 409) => new AppError(message, `live_${code}`, status);
+
+/** Whether online sessions can be offered in this gym: the server is set up and the plan includes them. */
+export function liveSessionsAvailable(ctx: { plan: PlanSummary | null }): boolean {
+  return !!liveKitConfig() && !!ctx.plan?.features.liveSessions;
+}
+
+/** Scheduling or booking an online session needs the same as joining one. */
+export function assertLiveSessionsAvailable(ctx: { plan: PlanSummary | null }): void {
+  if (!liveKitConfig()) throw liveError("unavailable", M.notConfigured, 503);
+  if (!ctx.plan?.features.liveSessions) throw new FeatureNotInPlanError(M.notInPlan);
+}
 
 function available(plan: PlanSummary | null, access: SubscriptionAccess): LiveKitConfig {
   const config = liveKitConfig();
@@ -167,3 +180,33 @@ export async function joinAsMember(ctx: MemberContext, kind: LiveKind, sessionId
   return issue(config, ctx.gym.id, s, { memberId: ctx.memberId }, name, "member", now);
 }
 
+
+/**
+ * The class host mutes someone's microphone or removes them from the call. Only the class's own
+ * trainer, during the session. Removing disconnects; to keep someone out, cancel their booking
+ * too (they then get no new token).
+ */
+export async function moderateLive(ctx: TenantContext, sessionId: string, identity: string, action: "mute" | "remove", now = new Date()): Promise<{ done: boolean }> {
+  available(ctx.plan, ctx.access);
+  if (!ctx.staffId || ctx.supportSessionId) throw new ForbiddenError("Support access can't join live sessions.");
+  const staffId = ctx.staffId;
+  const s = await inTenant(ctx, (tx) => loadSession(tx, "class", sessionId));
+  if (!s) throw new NotFoundError("Session not found.");
+  if (s.trainerId !== staffId) throw new ForbiddenError("Only the class's trainer can do that.");
+  assertJoinableNow(s, now);
+  const who = parseLiveIdentity(identity);
+  if (!who) throw new NotFoundError("They aren't in this call.");
+  if ("staffId" in who && who.staffId === staffId) throw liveError("self", "That's you.");
+  const admin = liveRoomAdmin();
+  if (!admin) throw liveError("unavailable", M.notConfigured, 503);
+  const room = liveRoomName(ctx.gym.id, "class", s.id);
+  const done = action === "mute" ? await admin.muteMicrophone(room, identity) : await admin.removeParticipant(room, identity);
+  return { done };
+}
+
+/** The call page's heading: what this session is and whether you're its trainer (null: not found). */
+export async function liveSessionInfo(ctx: TenantContext, kind: LiveKind, sessionId: string) {
+  const s = await inTenant(ctx, (tx) => loadSession(tx, kind, sessionId));
+  if (!s) return null;
+  return { kind, id: s.id, title: s.title, startsAt: s.startsAt, endsAt: s.endsAt, status: s.status, deliveryMode: s.deliveryMode, isTrainer: !!ctx.staffId && s.trainerId === ctx.staffId };
+}

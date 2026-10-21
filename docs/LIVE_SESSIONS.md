@@ -19,6 +19,11 @@ Nothing is recorded (no Egress) in this version.
    so `ClassSession.roomId` becomes nullable, and a check constraint keeps it required for the
    other two modes. Booking, capacity, waitlists, credits, PT packages, reminders and reports
    all keep working unchanged, because an online session is still the same row.
+   - The mode is chosen when a class is scheduled or a PT session is booked, and stays fixed.
+     To change it, cancel and reschedule.
+   - An in-person class's capacity is capped by its room. A hybrid class's isn't, since some
+     people join from home.
+   - The option appears only when the plan includes live sessions and the server is set up.
 2. **One LiveKit room per session, created on demand.** The room name is
    `g_{gymId}__class_{sessionId}` or `g_{gymId}__pt_{sessionId}`. The gym id is part of the name
    and every token is issued after a gym-scoped database check, so one tenant cannot reach
@@ -78,7 +83,9 @@ Nothing is recorded (no Egress) in this version.
 - TLS on the signalling URL (`wss://`). Phones and browsers refuse plain `ws://`, except on
   localhost.
 - **TURN/TLS on port 443** (LiveKit's embedded TURN, or coturn). Without it, many mobile and
-  corporate networks cannot connect.
+  corporate networks cannot connect. Status of the current server, checked 2026-10-21:
+  - Media between two browsers works over direct UDP.
+  - With relay only, no connection could be made, so TURN isn't available yet.
 - An API key and secret for this app, used only by this app, in `.env`. Never commit them.
 - The webhook pointed at `{APP_URL}/api/livekit/webhook`, signed with the same API key
   (`webhook: { api_key: …, urls: [...] }` in the LiveKit config). LiveKit must be able to reach
@@ -90,12 +97,32 @@ Nothing is recorded (no Egress) in this version.
 
 ## Parts
 
-Part 1 is built; part 2 is next.
+Parts 1 and 2 are built; part 3 is next.
+
+**What the web portal has (part 2)**
+- **Booking:** "Where" appears when scheduling a class (in the room, online only, or hybrid)
+  and when booking PT (in person or online).
+- **Lists:** online and hybrid badges show on the timetable, the class page, PT sessions, a
+  client's PT page and My schedule. My schedule now lists PT sessions too.
+- **Join call:** the button shows only to the session's own trainer. It says "Call opens HH:MM"
+  until 10 minutes before the start, then opens `/g/{gym}/live/{class|pt}/{id}`:
+  - The call page has a video grid and controls (mic, camera, screen share, leave). It has no
+    chat and no settings menu.
+  - A class host also gets a list of people in the call, with mute and remove buttons. Removing
+    disconnects someone, but they can rejoin while they're still booked. To keep them out,
+    cancel their booking as well.
+- **Attendance:** "joined online · 42 min" (or "online now") shows on the class roster and on
+  the PT sessions list.
+- **Security headers:** `Permissions-Policy` now allows the microphone and screen sharing on
+  this site. The CSP `connect-src` allows the LiveKit host (`wss://` and `https://`), taken from
+  `LIVEKIT_URL`.
+- **Tests:** the e2e tests use a throwaway LiveKit address, so they check booking and the join
+  gates but not media.
 
 | Part | Contents |
 |---|---|
 | **1. Server foundation** | Env config, `featureLiveSessions` flag, `deliveryMode` on both session tables (migration, room nullable for online classes), `LiveAttendance` with RLS and `app_record_live_event()`, the member timetable including online classes, the token service (`src/server/services/live/join.ts`: join window, who may join, grants), the mobile endpoint `POST /api/mobile/v1/live/{class\|pt}/{sessionId}/token` (rate-limited, in the OpenAPI contract), closing rooms on cancel and in the jobs runner, the webhook, `live:check`, and unit and integration tests that decode the issued tokens to check their grants. |
-| **2. Web portal** | The web join (server action) and the CSP `connect-src` for the LiveKit URL, an "Online / Hybrid" choice when scheduling classes and booking PT, online badges in the schedule and lists, the staff live room page (video grid, host controls, leave), "joined online" on the class roster and PT session, and e2e tests (token issuance and the gates; media itself is not tested in CI). |
+| **2. Web portal** | The web join (server action), the CSP and Permissions-Policy changes, the "Where" choice when scheduling classes and booking PT, online badges and Join buttons in the lists, the call page with host controls, and "joined online" on the class roster and PT sessions. Integration and e2e tests. |
 | **3. Mobile app** | The LiveKit React Native SDK and config plugins, a pre-join screen (camera/mic check), the call screen for members and trainers, Join buttons on My classes, My trainer and the trainer schedule, deep links from reminders, and the "starts in 10 minutes" alert. Requires a new dev build. |
 
 Each part stops for review before the next.

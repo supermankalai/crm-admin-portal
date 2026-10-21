@@ -194,8 +194,8 @@ function sessionItem(s: SessionRow, trainer: string) {
 }
 
 /** Booking and closing live in the PT module (alerts, manager booking); the trainer app uses them too. */
-export function createTrainingSession(ctx: TenantContext, input: { memberId: string; startsAt: string; durationMinutes: number; focus: string | null }, meta: RequestMeta) {
-  return bookSession(ctx, { memberId: input.memberId, startsAt: new Date(input.startsAt), durationMinutes: input.durationMinutes, focus: input.focus }, meta);
+export function createTrainingSession(ctx: TenantContext, input: { memberId: string; startsAt: string; durationMinutes: number; focus: string | null; deliveryMode?: "IN_PERSON" | "ONLINE" }, meta: RequestMeta) {
+  return bookSession(ctx, { memberId: input.memberId, startsAt: new Date(input.startsAt), durationMinutes: input.durationMinutes, focus: input.focus, deliveryMode: input.deliveryMode }, meta);
 }
 
 export function updateTrainingSession(ctx: TenantContext, id: string, status: "COMPLETED" | "CANCELLED" | "NO_SHOW", meta: RequestMeta) {

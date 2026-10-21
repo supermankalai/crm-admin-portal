@@ -11,6 +11,7 @@ import { formatDate, formatDateTime, localTime } from "@/domain/dates";
 import { PT_GOAL_LABELS } from "@/domain/pt";
 import { listTrainers } from "@/server/services/pt/clients";
 import { ptOverview } from "@/server/services/pt/overview";
+import { liveSessionsAvailable } from "@/server/services/live/join";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { todayFor } from "@/server/services/members/shared";
 import { AssignTrainerDialog, BookSessionDialog } from "./pt-forms";
@@ -38,7 +39,7 @@ export default async function PtOverviewPage({ params }: { params: Promise<{ gym
           canWrite && (
             <div className="flex flex-wrap gap-2">
               {isManager && <AssignTrainerDialog gymSlug={slug} trainers={trainers} />}
-              <BookSessionDialog gymSlug={slug} today={todayFor(ctx)} trainers={isManager ? trainers : []} canComplimentary={isManager} />
+              <BookSessionDialog canBookOnline={liveSessionsAvailable(ctx)} gymSlug={slug} today={todayFor(ctx)} trainers={isManager ? trainers : []} canComplimentary={isManager} />
             </div>
           )
         }

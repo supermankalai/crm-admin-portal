@@ -84,6 +84,8 @@ export const bookPtSessionSchema = z.object({
     .transform((v) => (v === "" ? null : v)),
   /** Managers only: book without using a package credit. */
   complimentary: z.boolean().default(false),
+  /** In person, or a video call (when the gym's plan includes live sessions). */
+  deliveryMode: z.enum(["IN_PERSON", "ONLINE"]).default("IN_PERSON"),
 });
 export type BookPtSessionFormValues = z.input<typeof bookPtSessionSchema>;
 

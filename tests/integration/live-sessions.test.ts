@@ -9,13 +9,17 @@ import { hashPassword } from "@/server/auth/password";
 import { liveRoomName } from "@/domain/live";
 import { appDb } from "@/server/db/client";
 import { AppError, FeatureNotInPlanError, ForbiddenError, NotFoundError, UnauthenticatedError } from "@/server/errors";
-import { cancelSession } from "@/server/services/classes/sessions";
+import { addDays, localDate } from "@/domain/dates";
+import { weekStart } from "@/domain/classes";
+import { cancelSession, createSessions, updateSession } from "@/server/services/classes/sessions";
+import { liveAttendance, presenceLabel } from "@/server/services/live/attendance";
+import { mySchedule } from "@/server/services/staff";
 import { closeEndedLiveRooms } from "@/server/services/live/close-ended";
 import { liveKitConfig } from "@/server/services/live/config";
-import { joinAsMember, joinAsStaff } from "@/server/services/live/join";
+import { joinAsMember, joinAsStaff, moderateLive } from "@/server/services/live/join";
 import { setLiveRoomAdminForTests, type LiveRoomAdmin } from "@/server/services/live/rooms";
 import { handleLiveWebhook } from "@/server/services/live/webhook";
-import { closeSession } from "@/server/services/pt/sessions";
+import { bookSession, closeSession } from "@/server/services/pt/sessions";
 import { resolveMemberContext, type MemberContext } from "@/server/tenant/member";
 import { resolveTenant } from "@/server/tenant/resolve";
 import type { TenantContext } from "@/server/tenant/types";
@@ -32,12 +36,26 @@ const config = liveKitConfig()!;
 class FakeRooms implements LiveRoomAdmin {
   open = new Set<string>();
   deleted: string[] = [];
+  /** "room|identity" of who is connected right now. */
+  present = new Set<string>();
+  muted: string[] = [];
+  removed: string[] = [];
   async listRooms() {
     return [...this.open];
   }
   async deleteRoom(name: string) {
     this.deleted.push(name);
     this.open.delete(name);
+  }
+  async muteMicrophone(room: string, identity: string) {
+    if (!this.present.has(`${room}|${identity}`)) return false;
+    this.muted.push(identity);
+    return true;
+  }
+  async removeParticipant(room: string, identity: string) {
+    if (!this.present.delete(`${room}|${identity}`)) return false;
+    this.removed.push(identity);
+    return true;
   }
 }
 const rooms = new FakeRooms();
@@ -322,6 +340,87 @@ describe("the mobile endpoint", () => {
 
     const bad = await callApi(liveTokenRoute.POST, { method: "POST", token: await appToken("tara@live.test"), params: { kind: "video", sessionId: ids.onlineClass } });
     expect(bad.status).toBe(422);
+  });
+});
+
+describe("scheduling online classes and booking online PT", () => {
+  const inDays = (n: number) => addDays(localDate(new Date(), ownerA.gym.timezone), n);
+  const base = () => ({ classTypeId: ids.classType, trainerId: ids.trainer, date: inDays(3), durationMinutes: 60, repeatWeeks: 1 });
+
+  it("an online class has no room and no room-sized cap; a hybrid one keeps its room", async () => {
+    await createSessions(ownerA, { ...base(), deliveryMode: "ONLINE", roomId: null, startTime: "09:00", capacity: 40 }, meta);
+    await createSessions(ownerA, { ...base(), deliveryMode: "HYBRID", roomId: ids.room, startTime: "07:00", capacity: 30 }, meta);
+    const rows = await getOwnerDb().classSession.findMany({ where: { gymId: w.gymA.id, capacity: { in: [30, 40] } }, select: { deliveryMode: true, roomId: true, capacity: true }, orderBy: { capacity: "asc" } });
+    expect(rows).toEqual([
+      { deliveryMode: "HYBRID", roomId: ids.room, capacity: 30 },
+      { deliveryMode: "ONLINE", roomId: null, capacity: 40 },
+    ]);
+    // In the room only, the room's size still caps it (the studio holds 20).
+    await expectError(createSessions(ownerA, { ...base(), deliveryMode: "IN_PERSON", roomId: ids.room, startTime: "12:00", capacity: 30 }, meta), AppError, "validation");
+  });
+
+  it("editing an online class leaves it without a room", async () => {
+    const online = await getOwnerDb().classSession.findFirstOrThrow({ where: { gymId: w.gymA.id, capacity: 40 }, select: { id: true } });
+    await updateSession(ownerA, { sessionId: online.id, trainerId: ids.trainer, roomId: ids.room, capacity: 35 }, meta);
+    expect(await getOwnerDb().classSession.findUniqueOrThrow({ where: { id: online.id }, select: { roomId: true, capacity: true } })).toEqual({ roomId: null, capacity: 35 });
+  });
+
+  it("a trainer books an online PT session with their client", async () => {
+    const r = await bookSession(trainer, { memberId: w.memberA.id, startsAt: new Date(Date.now() + 4 * 86_400_000), durationMinutes: 45, focus: "Mobility", deliveryMode: "ONLINE" }, meta);
+    expect(await getOwnerDb().trainingSession.findUniqueOrThrow({ where: { id: r.id }, select: { deliveryMode: true } })).toEqual({ deliveryMode: "ONLINE" });
+  });
+
+  it("neither is possible when the plan doesn't include live sessions", async () => {
+    const db = getOwnerDb();
+    await db.platformPlan.update({ where: { code: "TEST" }, data: { featureLiveSessions: false } });
+    try {
+      const owner = (await resolveTenant({ id: ownerA.user.id, name: ownerA.user.name, email: ownerA.user.email, isSuperAdmin: false }, "gym-a"))!;
+      const coach = (await resolveTenant({ id: trainer.user.id, name: trainer.user.name, email: trainer.user.email, isSuperAdmin: false }, "gym-a"))!;
+      await expectError(createSessions(owner, { ...base(), deliveryMode: "ONLINE", roomId: null, startTime: "15:00", capacity: 10 }, meta), FeatureNotInPlanError);
+      await expectError(bookSession(coach, { memberId: w.memberA.id, startsAt: new Date(Date.now() + 5 * 86_400_000), durationMinutes: 45, focus: null, deliveryMode: "ONLINE" }, meta), FeatureNotInPlanError);
+      // In person still works.
+      await createSessions(owner, { ...base(), deliveryMode: "IN_PERSON", roomId: ids.room, startTime: "15:00", capacity: 10 }, meta);
+    } finally {
+      await db.platformPlan.update({ where: { code: "TEST" }, data: { featureLiveSessions: true } });
+    }
+  });
+});
+
+describe("the class host", () => {
+  const room = () => liveRoomName(w.gymA.id, "class", ids.onlineClass);
+
+  it("mutes and removes people in the call; someone already gone is reported", async () => {
+    rooms.present = new Set([`${room()}|m_${w.memberA.id}`]);
+    expect(await moderateLive(trainer, ids.onlineClass, `m_${w.memberA.id}`, "mute")).toEqual({ done: true });
+    expect(await moderateLive(trainer, ids.onlineClass, `m_${w.memberA.id}`, "remove")).toEqual({ done: true });
+    expect(await moderateLive(trainer, ids.onlineClass, `m_${w.memberA.id}`, "remove")).toEqual({ done: false });
+    expect(rooms.muted).toEqual([`m_${w.memberA.id}`]);
+    expect(rooms.removed).toEqual([`m_${w.memberA.id}`]);
+  });
+
+  it("is the class's trainer only, never for PT calls, and not on themselves", async () => {
+    for (const ctx of [ownerA, otherTrainer, deskA]) await expectError(moderateLive(ctx, ids.onlineClass, `m_${w.memberA.id}`, "mute"), ForbiddenError);
+    await expectError(moderateLive(ownerB, ids.onlineClass, `m_${w.memberA.id}`, "mute"), NotFoundError);
+    await expectError(moderateLive(trainer, ids.onlinePt, `m_${w.memberA.id}`, "mute"), NotFoundError);
+    await expectError(moderateLive(trainer, ids.onlineClass, `s_${ids.trainer}`, "remove"), AppError, "live_self");
+    await expectError(moderateLive(trainer, ids.onlineClass, "someone", "remove"), NotFoundError);
+  });
+});
+
+describe("what the web pages show", () => {
+  it("who joined online and for how long", async () => {
+    const presence = await liveAttendance(ownerA, "class", [ids.hybridClass]);
+    const alice = presence.get(ids.hybridClass)?.get(w.memberA.id);
+    expect(alice).toEqual({ seconds: 600, connected: false });
+    expect(presenceLabel(alice!)).toBe("joined online · 10 min");
+    expect(presenceLabel({ seconds: 3900, connected: true })).toBe("online now · 1 h 5 min");
+    expect((await liveAttendance(ownerB, "class", [ids.hybridClass])).size).toBe(0);
+  });
+
+  it("the trainer's schedule includes their PT sessions and how each is delivered", async () => {
+    const { classes, pts } = await mySchedule(trainer, weekStart(localDate(new Date(), trainer.gym.timezone)));
+    expect(classes.find((c) => c.id === ids.onlineClass)?.deliveryMode).toBe("ONLINE");
+    expect(pts.find((p) => p.id === ids.onlinePt)?.deliveryMode).toBe("ONLINE");
   });
 });
 

@@ -148,7 +148,7 @@ export async function ptClient(ctx: TenantContext, memberId: string) {
         where: { memberId, startsAt: { gte: new Date(Date.now() - 120 * 86_400_000) } },
         orderBy: { startsAt: "desc" },
         take: 40,
-        select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, trainerId: true, complimentary: true, purchase: { select: { name: true } }, trainer: { select: { user: { select: { name: true } } } } },
+        select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, trainerId: true, complimentary: true, deliveryMode: true, purchase: { select: { name: true } }, trainer: { select: { user: { select: { name: true } } } } },
       }),
       tx.trainingSession.groupBy({ by: ["status"], where: { memberId }, _count: { _all: true } }),
       tx.trainerClientNote.findMany({ where: { memberId }, orderBy: { createdAt: "desc" }, take: 30, select: { id: true, bodyEnc: true, createdAt: true, authorId: true, author: { select: { user: { select: { name: true } } } } } }),

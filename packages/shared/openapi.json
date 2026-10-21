@@ -31203,6 +31203,14 @@
                   "focus": {
                     "type": "string",
                     "maxLength": 120
+                  },
+                  "deliveryMode": {
+                    "default": "IN_PERSON",
+                    "type": "string",
+                    "enum": [
+                      "IN_PERSON",
+                      "ONLINE"
+                    ]
                   }
                 },
                 "required": [

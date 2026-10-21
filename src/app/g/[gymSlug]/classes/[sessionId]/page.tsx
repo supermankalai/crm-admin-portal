@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
+import { DeliveryBadge, JoinCallButton, placeLabel } from "@/components/live/live-ui";
 import { EmptyState } from "@/components/empty-state";
 import { MemberAvatar } from "@/components/members/member-avatar";
 import { UpgradeNotice } from "@/components/upgrade-notice";
@@ -10,12 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { canMarkAttendance } from "@/domain/classes";
 import { localDate, localTime } from "@/domain/dates";
+import { hasVideoRoom } from "@/domain/live";
 import { formatMemberNumber } from "@/domain/member-search";
 import { featureMessage } from "@/domain/plan-limits";
 import { NotFoundError } from "@/server/errors";
 import { hasFeature, planLimitsOf } from "@/server/plan/limits";
 import { getSession } from "@/server/services/classes/sessions";
 import { listClassSetup } from "@/server/services/classes/setup";
+import { liveAttendance, presenceLabel } from "@/server/services/live/attendance";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { BookingRowActions, BookMember, CancelSession, EditSession } from "./session-actions";
 
@@ -48,6 +51,9 @@ export default async function SessionPage({ params }: { params: Promise<{ gymSlu
   const cancelled = session.bookings.filter((b) => b.status === "CANCELLED");
   const attendanceOpen = canManage && session.status !== "CANCELLED" && canMarkAttendance(session);
   const setup = canManage && upcoming ? await listClassSetup(ctx) : null;
+  const online = hasVideoRoom(session.deliveryMode);
+  // Who joined the call, from LiveKit's webhook (online and hybrid classes).
+  const presence = online ? (await liveAttendance(ctx, "class", [session.id])).get(session.id) : undefined;
   const date = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: tz }).format(session.startsAt);
 
   const row = (b: (typeof session.bookings)[number]) => {
@@ -59,6 +65,7 @@ export default async function SessionPage({ params }: { params: Promise<{ gymSlu
         <Link href={`/g/${gymSlug}/members/${b.member.id}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline">
           {name} <span className="font-mono text-xs text-muted-foreground">{formatMemberNumber(b.member.memberNumber)}</span>
         </Link>
+        {presence?.get(b.member.id) && <span className="text-xs text-sky-700 dark:text-sky-400">{presenceLabel(presence.get(b.member.id)!)}</span>}
         <Badge variant={STATUS[b.status].variant}>{STATUS[b.status].label}</Badge>
         <BookingRowActions gymSlug={gymSlug} sessionId={session.id} bookingId={b.id} name={name} status={b.status} canCancel={upcoming && (canBook || canManage)} canMark={attendanceOpen} />
       </li>
@@ -76,21 +83,25 @@ export default async function SessionPage({ params }: { params: Promise<{ gymSlu
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{session.classType.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {date} · {localTime(session.startsAt, tz)}–{localTime(session.endsAt, tz)} · {session.room ? `${session.room.location.name}, ${session.room.name}` : "Online"} · with {session.trainer.user.name}
+              {date} · {localTime(session.startsAt, tz)}–{localTime(session.endsAt, tz)} · {session.room ? `${session.room.location.name}, ${placeLabel(session.deliveryMode, session.room.name)}` : "Online"} · with {session.trainer.user.name}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {session.status === "CANCELLED" ? <Badge variant="danger">Cancelled</Badge> : <Badge variant={confirmed.length >= session.capacity ? "warning" : "secondary"}>{confirmed.length}/{session.capacity} booked</Badge>}
               {waitlist.length > 0 && <Badge variant="warning">{waitlist.length} on waitlist</Badge>}
+              <DeliveryBadge mode={session.deliveryMode} />
             </div>
           </div>
         </div>
-        {/* Online classes (no room) get their own edit form with the live-session screens. */}
-        {canManage && upcoming && setup && session.roomId !== null && (
-          <div className="flex flex-wrap gap-2">
-            <EditSession gymSlug={gymSlug} session={{ ...session, roomId: session.roomId }} rooms={setup.rooms} trainers={setup.trainers} canChangeStaffing={hasPermission(ctx, "classes.manage")} />
-            <CancelSession gymSlug={gymSlug} sessionId={session.id} booked={confirmed.length} />
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {/* Only the class's trainer joins the call, as its host. */}
+          {isOwnClass && online && session.status === "SCHEDULED" && <JoinCallButton gymSlug={gymSlug} kind="class" sessionId={session.id} startsAt={session.startsAt} endsAt={session.endsAt} timeZone={tz} size="default" />}
+          {canManage && upcoming && setup && (
+            <>
+              <EditSession gymSlug={gymSlug} session={session} rooms={setup.rooms} trainers={setup.trainers} canChangeStaffing={hasPermission(ctx, "classes.manage")} />
+              <CancelSession gymSlug={gymSlug} sessionId={session.id} booked={confirmed.length} />
+            </>
+          )}
+        </div>
       </div>
 
       {!hasFeature(ctx, "classBookings") && <div className="mb-4"><UpgradeNotice message={featureMessage(planLimitsOf(ctx), "classBookings")} canManageBilling={hasPermission(ctx, "billing.manage")} /></div>}

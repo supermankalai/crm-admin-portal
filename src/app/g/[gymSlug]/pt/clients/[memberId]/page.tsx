@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ImageIcon, Lock, Target } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
+import { DeliveryBadge, JoinCallButton } from "@/components/live/live-ui";
 import { MemberStatusBadge } from "@/components/members/member-badges";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { NotFoundError } from "@/server/errors";
 import { todayFor } from "@/server/services/members/shared";
 import { listTrainers, ptClient } from "@/server/services/pt/clients";
 import { listPackages } from "@/server/services/pt/packages";
+import { liveSessionsAvailable } from "@/server/services/live/join";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { AssignTrainerDialog, BookSessionDialog, EditGoalDialog, EndAssignmentButton, ProgressChart, PtNoteForm, SessionActions } from "../../pt-forms";
 import { SellPackageDialog } from "../../package-forms";
@@ -79,7 +81,7 @@ export default async function PtClientPage({ params }: { params: Promise<{ gymSl
                 defaultTrainerId={d.assignments.length === 1 ? d.assignments[0].trainerId : undefined}
               />
             )}
-            {canBook && <BookSessionDialog gymSlug={gymSlug} today={todayFor(ctx)} trainers={bookTrainers} member={{ id: d.member.id, name: d.member.name }} canComplimentary={isManager} creditsLeft={d.creditsLeft} />}
+            {canBook && <BookSessionDialog canBookOnline={liveSessionsAvailable(ctx)} gymSlug={gymSlug} today={todayFor(ctx)} trainers={bookTrainers} member={{ id: d.member.id, name: d.member.name }} canComplimentary={isManager} creditsLeft={d.creditsLeft} />}
           </div>
         )}
       </div>
@@ -258,12 +260,16 @@ export default async function PtClientPage({ params }: { params: Promise<{ gymSl
                           {" "}
                           · {s.trainer.user.name}
                           {s.focus && ` · ${s.focus}`}
-                        </span>
+                        </span>{" "}
+                        <DeliveryBadge mode={s.deliveryMode} />
                         <span className={s.purchase || s.complimentary ? "block text-xs text-muted-foreground" : "block text-xs text-amber-700 dark:text-amber-400"}>
                           {s.purchase ? `Uses ${s.purchase.name}` : s.complimentary ? "Complimentary" : "Not covered by a package"}
                         </span>
                       </span>
-                      {canWrite && (isManager || s.trainerId === d.viewer.staffId) && <SessionActions gymSlug={gymSlug} sessionId={s.id} started={false} label={sessionLabel(s)} />}
+                      <span className="flex flex-wrap items-center gap-1">
+                        {s.deliveryMode === "ONLINE" && s.trainerId === d.viewer.staffId && <JoinCallButton gymSlug={gymSlug} kind="pt" sessionId={s.id} startsAt={s.startsAt} endsAt={s.endsAt} timeZone={tz} />}
+                        {canWrite && (isManager || s.trainerId === d.viewer.staffId) && <SessionActions gymSlug={gymSlug} sessionId={s.id} started={false} label={sessionLabel(s)} />}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -283,10 +289,14 @@ export default async function PtClientPage({ params }: { params: Promise<{ gymSl
                           {" "}
                           · {s.trainer.user.name}
                           {s.focus && ` · ${s.focus}`}
-                        </span>
+                        </span>{" "}
+                        <DeliveryBadge mode={s.deliveryMode} />
                       </span>
                       {s.status === "SCHEDULED" && s.startsAt.getTime() < now && canWrite && (isManager || s.trainerId === d.viewer.staffId) ? (
-                        <SessionActions gymSlug={gymSlug} sessionId={s.id} started label={sessionLabel(s)} />
+                        <span className="flex flex-wrap items-center gap-1">
+                          {s.deliveryMode === "ONLINE" && s.trainerId === d.viewer.staffId && <JoinCallButton gymSlug={gymSlug} kind="pt" sessionId={s.id} startsAt={s.startsAt} endsAt={s.endsAt} timeZone={tz} />}
+                          <SessionActions gymSlug={gymSlug} sessionId={s.id} started label={sessionLabel(s)} />
+                        </span>
                       ) : (
                         <SessionStatusBadge status={s.status} />
                       )}

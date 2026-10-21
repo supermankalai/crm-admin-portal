@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Settings2 } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
+import { placeLabel } from "@/components/live/live-ui";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { UpgradeNotice } from "@/components/upgrade-notice";
@@ -129,7 +130,7 @@ export default async function ClassesPage({ params, searchParams }: { params: Pr
                         >
                           <span className="block font-semibold">{localTime(s.startsAt, tz)} {s.classType.name}</span>
                           <span className="block truncate text-muted-foreground">
-                            {s.trainer.user.name} · {s.room?.name ?? "Online"}
+                            {s.trainer.user.name} · {placeLabel(s.deliveryMode, s.room?.name)}
                           </span>
                           <span className={cn("mt-1 inline-block rounded px-1.5 py-0.5 font-medium tabular-nums", full ? "bg-amber-500/15 text-amber-800 dark:text-amber-300" : "bg-background")}>
                             {s.status === "CANCELLED" ? "Cancelled" : `${s.booked}/${s.capacity}${s.waitlisted ? ` +${s.waitlisted} waiting` : ""}`}

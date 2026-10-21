@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { listClassSetup } from "@/server/services/classes/setup";
+import { liveSessionsAvailable } from "@/server/services/live/join";
 import { todayFor } from "@/server/services/members/shared";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { SessionForm } from "./session-form";
@@ -17,12 +18,14 @@ export default async function NewSessionPage({ params }: { params: Promise<{ gym
   if (!hasPermission(ctx, "classes.manage")) return <AccessDenied what="scheduling classes" />;
   if (!ctx.access.writable || ctx.supportSessionId) return <AccessDenied what="scheduling classes while the gym is read-only" />;
   const setup = await listClassSetup(ctx);
-  const ready = setup.classTypes.length && setup.rooms.length && setup.trainers.length;
+  const canScheduleOnline = liveSessionsAvailable(ctx);
+  // Online classes need no room.
+  const ready = setup.classTypes.length && (setup.rooms.length || canScheduleOnline) && setup.trainers.length;
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Schedule a class" description="Trainer and room double-booking is checked automatically." />
       {ready ? (
-        <SessionForm gymSlug={ctx.gym.slug} setup={setup} today={todayFor(ctx)} />
+        <SessionForm gymSlug={ctx.gym.slug} setup={setup} today={todayFor(ctx)} canScheduleOnline={canScheduleOnline} />
       ) : (
         <Card>
           <EmptyState

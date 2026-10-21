@@ -279,15 +279,21 @@ export async function mySchedule(ctx: TenantContext, monday: string) {
   const tz = ctx.gym.timezone;
   const from = dayBounds(monday, tz).start;
   const to = dayBounds(addDays(monday, 6), tz).end;
-  if (!ctx.staffId) return { shifts: [], classes: [] };
+  if (!ctx.staffId) return { shifts: [], classes: [], pts: [] };
   const staffId = ctx.staffId;
   return inTenant(ctx, async (tx) => {
     const shifts = await tx.staffShift.findMany({ where: { staffId, startsAt: { gte: from, lt: to } }, orderBy: { startsAt: "asc" }, select: { id: true, startsAt: true, endsAt: true, location: { select: { name: true } } } });
     const classes = await tx.classSession.findMany({
       where: { trainerId: staffId, startsAt: { gte: from, lt: to } },
       orderBy: { startsAt: "asc" },
-      select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, _count: { select: { bookings: { where: { status: { in: ["BOOKED", "ATTENDED"] } } } } } },
+      select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, deliveryMode: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, _count: { select: { bookings: { where: { status: { in: ["BOOKED", "ATTENDED"] } } } } } },
     });
-    return { shifts, classes };
+    // Personal training too, so online sessions have their Join button here.
+    const pts = await tx.trainingSession.findMany({
+      where: { trainerId: staffId, startsAt: { gte: from, lt: to }, status: { not: "CANCELLED" } },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, deliveryMode: true, member: { select: { firstName: true, lastName: true } } },
+    });
+    return { shifts, classes, pts };
   });
 }

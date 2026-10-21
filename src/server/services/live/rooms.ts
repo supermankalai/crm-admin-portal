@@ -1,5 +1,5 @@
 import "server-only";
-import { RoomServiceClient } from "livekit-server-sdk";
+import { RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { parseLiveRoomName } from "@/domain/live";
 import { logger } from "@/server/logger";
 import { liveKitConfig } from "./config";
@@ -15,6 +15,10 @@ export interface LiveRoomAdmin {
   listRooms(): Promise<string[]>;
   /** Close a room (fine if it doesn't exist). */
   deleteRoom(name: string): Promise<void>;
+  /** Mute someone's microphone (they can unmute themselves). False if they aren't in the room. */
+  muteMicrophone(room: string, identity: string): Promise<boolean>;
+  /** Disconnect someone. False if they aren't in the room. */
+  removeParticipant(room: string, identity: string): Promise<boolean>;
 }
 
 class LiveKitRoomAdmin implements LiveRoomAdmin {
@@ -33,6 +37,26 @@ class LiveKitRoomAdmin implements LiveRoomAdmin {
       throw error;
     }
   }
+
+  async muteMicrophone(room: string, identity: string) {
+    const participant = await this.client.getParticipant(room, identity).catch(notFound);
+    if (!participant) return false;
+    for (const track of participant.tracks) {
+      if (track.source === TrackSource.MICROPHONE && !track.muted) await this.client.mutePublishedTrack(room, identity, track.sid, true);
+    }
+    return true;
+  }
+
+  async removeParticipant(room: string, identity: string) {
+    const removed = await this.client.removeParticipant(room, identity).then(() => true, notFound);
+    return removed ?? false;
+  }
+}
+
+/** LiveKit answers 404 for a room or person that isn't there. */
+function notFound(error: unknown): null {
+  if ((error as { status?: number }).status === 404) return null;
+  throw error;
 }
 
 let override: LiveRoomAdmin | null | undefined;

@@ -4,6 +4,7 @@ import { can } from "@/domain/permissions";
 import { hasVideoRoom, liveRoomName } from "@/domain/live";
 import { pickPackage, ptSessionBookedText, ptSessionCancelledText } from "@/domain/pt";
 import { recordAudit } from "@/server/audit/tenant-audit";
+import { assertLiveSessionsAvailable } from "../live/join";
 import { closeLiveRoom } from "../live/rooms";
 import type { Tx } from "@/server/db/context";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/server/errors";
@@ -22,7 +23,7 @@ import { creditsUsed } from "./packages";
  * is told when a session is booked or cancelled, and so is the trainer when someone else did it.
  */
 
-export type BookInput = { trainerId?: string; memberId: string; startsAt: Date; durationMinutes: number; focus: string | null; complimentary?: boolean };
+export type BookInput = { trainerId?: string; memberId: string; startsAt: Date; durationMinutes: number; focus: string | null; complimentary?: boolean; deliveryMode?: "IN_PERSON" | "ONLINE" };
 
 async function lockTrainer(tx: Tx, staffId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"pt-trainer:" + staffId}))`;
@@ -85,6 +86,8 @@ export async function bookSession(ctx: TenantContext, input: BookInput, meta: Re
   const forOther = trainerId !== c.staffId;
   if (forOther && !can(ctx.role, "pt.manage")) throw new ForbiddenError("You can only book your own sessions.");
   const { startsAt } = input;
+  const deliveryMode = input.deliveryMode ?? "IN_PERSON";
+  if (deliveryMode === "ONLINE") assertLiveSessionsAvailable(ctx);
   const endsAt = new Date(startsAt.getTime() + input.durationMinutes * 60_000);
   if (Number.isNaN(startsAt.getTime())) throw new ValidationError("Choose a start time.", { startsAt: ["Choose a start time."] });
   if (startsAt.getTime() < Date.now() - 5 * 60_000) throw new ValidationError("Choose a time in the future.", { startsAt: ["Choose a time in the future."] });
@@ -107,7 +110,7 @@ export async function bookSession(ctx: TenantContext, input: BookInput, meta: Re
     const credit = await chooseCredit(tx, ctx, member.id, fullName(member), trainerId, startsAt, input.complimentary ?? false);
     const row = await tx.trainingSession
       .create({
-        data: { gymId: ctx.gym.id, trainerId, memberId: member.id, startsAt, endsAt, focus: input.focus, bookedById: c.staffId, purchaseId: credit.purchaseId, complimentary: credit.complimentary },
+        data: { gymId: ctx.gym.id, trainerId, memberId: member.id, startsAt, endsAt, focus: input.focus, bookedById: c.staffId, purchaseId: credit.purchaseId, complimentary: credit.complimentary, deliveryMode },
         select: { id: true },
       })
       .catch(creditError);
@@ -115,7 +118,7 @@ export async function bookSession(ctx: TenantContext, input: BookInput, meta: Re
       action: "training_session.create",
       entityType: "TrainingSession",
       entityId: row.id,
-      changes: { memberId: member.id, trainerId, startsAt: startsAt.toISOString(), minutes: input.durationMinutes, purchaseId: credit.purchaseId, complimentary: credit.complimentary },
+      changes: { memberId: member.id, trainerId, startsAt: startsAt.toISOString(), minutes: input.durationMinutes, purchaseId: credit.purchaseId, complimentary: credit.complimentary, deliveryMode },
     }, meta);
 
     const when = formatDateTime(startsAt, ctx.gym.timezone);
@@ -191,6 +194,7 @@ export async function listSessions(ctx: TenantContext, f: SessionFilters) {
         trainer: { select: { user: { select: { name: true } } } },
         member: { select: { id: true, firstName: true, lastName: true } },
         complimentary: true,
+        deliveryMode: true,
         purchase: { select: { name: true } },
       },
     });
@@ -207,6 +211,8 @@ export async function listSessions(ctx: TenantContext, f: SessionFilters) {
         member: { id: s.member.id, name: fullName(s.member) },
         cover: s.purchase ? s.purchase.name : s.complimentary ? "Complimentary" : null,
         canChange: isManager || s.trainerId === c.staffId,
+        deliveryMode: s.deliveryMode,
+        isMine: s.trainerId === c.staffId,
       })),
     };
   });

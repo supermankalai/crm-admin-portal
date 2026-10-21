@@ -316,6 +316,7 @@ export function BookSessionDialog({
   member,
   defaultTrainerId,
   canComplimentary = false,
+  canBookOnline = false,
   creditsLeft,
 }: {
   gymSlug: string;
@@ -326,6 +327,8 @@ export function BookSessionDialog({
   defaultTrainerId?: string;
   /** Owners and managers may book without a package credit. */
   canComplimentary?: boolean;
+  /** The plan includes live sessions: offer an online (video call) session. */
+  canBookOnline?: boolean;
   /** Credits the (fixed) client has left, to show while booking. */
   creditsLeft?: number;
 }) {
@@ -343,6 +346,7 @@ export function BookSessionDialog({
       durationMinutes: PT_SESSION_MINUTES.default,
       focus: "",
       complimentary: false,
+      deliveryMode: "IN_PERSON",
     },
   });
   const errors = form.formState.errors;
@@ -434,6 +438,16 @@ export function BookSessionDialog({
                 <FieldError message={errors.durationMinutes?.message} />
               </div>
             </div>
+            {canBookOnline && (
+              <div className="grid gap-2">
+                <Label htmlFor="book-mode">Where</Label>
+                <NativeSelect id="book-mode" {...form.register("deliveryMode")}>
+                  <option value="IN_PERSON">In person</option>
+                  <option value="ONLINE">Online (video call in the app)</option>
+                </NativeSelect>
+                <FieldError message={errors.deliveryMode?.message} />
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="book-focus">Focus (optional)</Label>
               <Input id="book-focus" maxLength={120} placeholder="e.g. Lower body strength" {...form.register("focus")} />
