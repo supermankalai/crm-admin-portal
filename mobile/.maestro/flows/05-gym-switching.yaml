@@ -1,0 +1,29 @@
+# One person, member of two gyms: pick a gym, then switch to the other from More.
+appId: com.kangagympilot.member.dev
+name: Gym switching
+tags: [member]
+---
+- runFlow:
+    file: ../subflows/login.yaml
+    env:
+      EMAIL: alex.member@fitcrm.example
+      PASSWORD: Member#2026
+- extendedWaitUntil:
+    visible: "Iron Temple Fitness.*"
+    timeout: 20000
+- tapOn: "Iron Temple Fitness.*"
+- extendedWaitUntil:
+    visible: "My card"
+    timeout: 20000
+- assertVisible: "Iron Temple Fitness"
+- tapOn: "More"
+- tapOn: "Switch gym.*"
+- extendedWaitUntil:
+    visible: "Zen Strength Collective.*"
+    timeout: 20000
+- tapOn: "Zen Strength Collective.*"
+- extendedWaitUntil:
+    visible: "My card"
+    timeout: 20000
+- assertVisible: "Zen Strength Collective"
+- assertNotVisible: "Iron Temple Fitness"

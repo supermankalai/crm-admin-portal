@@ -1,0 +1,29 @@
+# A trainer opens a class they're teaching from their schedule and marks a member attended.
+appId: com.kangagympilot.member.dev
+name: Trainer marks attendance
+tags: [staff]
+---
+- runFlow:
+    file: ../subflows/login.yaml
+    env:
+      EMAIL: trainer1@irontemple.example
+      PASSWORD: GymStaff#2026
+- extendedWaitUntil:
+    visible: "Schedule"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "Maestro Attendance Class"
+    timeout: 30000
+- tapOn: "Maestro Attendance Class"
+- extendedWaitUntil:
+    visible: "Mark who came.*"
+    timeout: 15000
+- tapOn:
+    text: "Attended"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      text: "Attended"
+      childOf:
+        id: "booking-status-0"
+    timeout: 15000

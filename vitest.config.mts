@@ -1,0 +1,42 @@
+import path from "node:path";
+import { defineConfig } from "vitest/config";
+
+// Order matters: the shared-package aliases must win over the general "@" alias.
+const alias = [
+  { find: /^@fitcrm\/shared\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src") + "/" },
+  { find: /^@\/domain\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src/domain") + "/" },
+  { find: /^@\/lib\/validation\//, replacement: path.resolve(import.meta.dirname, "packages/shared/src/validation") + "/" },
+  { find: /^@\//, replacement: path.resolve(import.meta.dirname, "src") + "/" },
+  // "server-only" throws outside the React Server Components bundler; tests run in plain Node.
+  { find: /^server-only$/, replacement: path.resolve(import.meta.dirname, "tests/support/empty-module.ts") },
+];
+
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        resolve: { alias },
+        test: {
+          name: "unit",
+          include: ["tests/unit/**/*.test.ts"],
+          environment: "node",
+          setupFiles: ["tests/support/load-env.ts"],
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          name: "integration",
+          include: ["tests/integration/**/*.test.ts"],
+          environment: "node",
+          setupFiles: ["tests/support/load-env.ts", "tests/support/use-test-database.ts"],
+          globalSetup: ["tests/support/integration-global-setup.ts"],
+          // One database: run files sequentially.
+          fileParallelism: false,
+          testTimeout: 30_000,
+          hookTimeout: 120_000,
+        },
+      },
+    ],
+  },
+});

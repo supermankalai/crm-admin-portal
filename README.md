@@ -1,1 +1,601 @@
-crm-admin-portal
+# FitCRM: multi-tenant gym management SaaS
+
+One platform, many gyms. Each gym subscribes to a plan and manages only its own members, staff, payments and classes. Tenant isolation is enforced in PostgreSQL itself (Row-Level Security), in a tenant-scoped data layer, and in server-side checks on every entry point.
+
+> **Build status: all 8 web phases complete. Mobile app: all 7 phases complete (API foundation; Expo app with sign-in, biometric lock, gym switching, branding and role tabs; member card with rotating QR, membership, class booking and waitlist, attendance and payment history; staff QR check-in scanner, dashboard, members, payments and sales, alerts and class overview; trainer schedule, attendance, clients, notes, workout plans and PT sessions; member workouts, measurements, charts and private progress photos; push notifications, inbox and alert settings, announcements, profile editing and account deletion, plus web pages for announcements, member app invites, deletion requests and workout plans; security review, endpoint-by-endpoint isolation tests, Maestro end-to-end flows and EAS builds). See [mobile/README.md](mobile/README.md).**
+> - **Phase 1:** database roles, RLS, encryption, seed, login
+> - **Phase 2:** multi-tenant layer, gym sign-up, gym switching, roles, layout
+> - **Phase 3:** platform subscriptions, plan limits, super admin area and support access
+> - **Phase 4:** dashboard, members and membership plans
+> - **Phase 5:** payments and check-in
+> - **Phase 6:** classes, waitlists, staff invitations, trainer profiles and schedules
+> - **Phase 7:** reports with CSV export, notifications, settings and the gym audit log
+> - **Phase 8:** security review and fixes, isolation tests across every table, account security (password change, sign out everywhere), final README
+>
+> See [docs/DESIGN.md](docs/DESIGN.md) for the approved architecture, and [§10](#10-security-model) and [§11](#11-production-checklist-and-known-limitations) before deploying.
+
+**Stack:** Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 + shadcn/ui · PostgreSQL 18 + Prisma 7 (migrations) · Auth.js v5 (credentials, argon2id) · Zod 4 · React Hook Form · Vitest · Playwright
+
+---
+
+## 1. Setup
+
+Prerequisites: Node.js 22 or later, and a local PostgreSQL 16+ server. Docker is not used.
+
+```bash
+npm install                      # also runs `prisma generate`
+cp .env.example .env             # then fill it in (see §3)
+npm run keys:generate            # prints fresh secrets to paste into .env
+
+npm run db:setup-roles           # once: creates the gym_app role (+ gym_saas_test database)
+npm run db:migrate               # applies migrations (tables, RLS, functions) + grants
+npm run db:seed                  # inserts the demo data (safe to re-run)
+
+npm run dev                      # http://localhost:3000
+```
+
+`npm run db:reset` performs the full rebuild in one step: drop the schema, run all migrations (including RLS), apply grants, then seed.
+
+On startup the app validates every environment variable. It also **refuses to start if `DATABASE_URL` connects as a superuser or a role with BYPASSRLS** ([src/instrumentation.ts](src/instrumentation.ts)).
+
+## 2. Database roles
+
+| Role | Used by | Privileges |
+|---|---|---|
+| `postgres` (owner) | `MIGRATION_DATABASE_URL`: Prisma migrations, the seed, `crypto:rotate` | Owns the schema. Never used by the running app. |
+| `gym_app` | `DATABASE_URL`: the running application | `LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`. Has `USAGE` on the schema but not `CREATE`. Can SELECT/INSERT/UPDATE/DELETE tables, with the exceptions below. |
+
+What `gym_app` cannot do ([prisma/sql/002_grants.sql](prisma/sql/002_grants.sql)):
+- `UPDATE` or `DELETE` on `AuditLog`, `PlatformAuditLog` or `SubscriptionHistory`, which are append-only. A trigger also blocks this for the owner role.
+- `DELETE` on `Member`, `MembershipPlan`, `Payment`, `Invoice`, `Refund`, `Gym`, `User` or `GymSubscription`. These use soft delete only.
+- Any access to `PasswordResetToken` or `RateLimitBucket`, or to `_prisma_migrations`. The first two are reachable only through narrow `SECURITY DEFINER` functions.
+- Create objects, disable RLS, or change `isSuperAdmin` (trigger).
+
+Role setup lives in [prisma/sql/001_app_role.sql](prisma/sql/001_app_role.sql), run via `npm run db:setup-roles`. It also sets the database time zone to **UTC**, a 15 s statement timeout and a 30 s idle-in-transaction timeout for `gym_app`.
+
+## 3. Environment variables
+
+All variables are validated with Zod at startup ([src/server/env.ts](src/server/env.ts)). Missing or invalid ones are listed by name; values are never printed.
+
+| Variable | Required | Description |
+|---|---|---|
+| `NODE_ENV` | — | `development` / `test` / `production` |
+| `APP_URL` | ✓ | Public base URL. `https://` turns on Secure cookies. |
+| `DATABASE_URL` | ✓ | `gym_app` connection string. Must not be `postgres` and must differ from the migration role. |
+| `MIGRATION_DATABASE_URL` | for CLI | Owner connection, for migrations and the seed only |
+| `DATABASE_SCHEMA` | — | Defaults to `gym-admin-portal` |
+| `APP_DB_PASSWORD` | for setup | Password `db:setup-roles` gives `gym_app`. Must match `DATABASE_URL`. |
+| `TEST_MIGRATION_DATABASE_URL`, `TEST_DATABASE_URL` | for tests | Must point at a database whose name ends in `_test` |
+| `AUTH_SECRET` | ✓ | JWT signing secret, at least 32 characters |
+| `AUTH_TRUST_HOST` | — | `true` behind a trusted reverse proxy or on localhost |
+| `ENCRYPTION_KEYS` | ✓ | `version:base64key` pairs, comma-separated. Each key is 32 bytes. |
+| `ENCRYPTION_ACTIVE_KEY_VERSION` | ✓ | Version used for new writes. Must exist in `ENCRYPTION_KEYS`. |
+| `BLIND_INDEX_KEY`, `BLIND_INDEX_KEY_VERSION` | ✓ | HMAC key (32 bytes, base64) for searchable encrypted fields |
+| `STORAGE_DIR` | — | Upload root. Files go to `STORAGE_DIR/<gymId>/…`. |
+| `EMAIL_PROVIDER`, `EMAIL_FROM` | ✓ | `dev-outbox` writes emails to `.dev-outbox/` |
+| `LOG_LEVEL` | — | `trace`, `debug`, `info`, `warn` or `error` |
+| `RATE_LIMIT_LOGIN_PER_IP`, `RATE_LIMIT_SIGNUP_PER_IP` | — | Per-IP limits: 30 logins per 15 minutes and 5 sign-ups per hour by default. The per-account limits are fixed: 5 login attempts per 15 minutes from one IP and 20 from all IPs combined. |
+| `MOBILE_SECRET` | ✓ | 32 random bytes (base64). Separate keys are derived from it for mobile access tokens, one-time codes, QR codes and signed file URLs. |
+| `SMS_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | — | `dev-outbox` (default) or `twilio`; the Twilio values are required when `twilio` is chosen |
+| `PUSH_PROVIDER`, `EXPO_ACCESS_TOKEN` | — | `dev-outbox` (default: pushes are written to `.dev-outbox/*.push.json`) or `expo` (real phones). The token is needed only if your Expo project has enhanced push security on |
+| `TRUSTED_PROXY_HOPS` | — | How many reverse proxies in front of the app append to `X-Forwarded-For` (default `1`). The client IP is read that many entries from the right; anything further left is client-supplied and ignored. |
+
+`.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
+
+## 4. Migrations and Row-Level Security
+
+All schema changes go through `prisma migrate` (never `db push`):
+
+| Migration | Contents |
+|---|---|
+| `…_init` | Tables, indexes, composite `(gymId, id)` foreign keys |
+| `…_security_rls` | CHECK constraints, triggers, RLS helper functions, policies on every table, and the pre-auth `SECURITY DEFINER` functions |
+| `…_timestamptz` | Every instant stored as `timestamptz` |
+
+To create a new migration: `npx prisma migrate dev --name <change> --create-only`, review the SQL, then run `npm run db:migrate`. CHECK constraints, triggers, functions and policies are written by hand in migration SQL. Prisma does not manage them, so it never tries to drop them.
+
+**How isolation works:**
+1. **Session context.** Every request runs inside a transaction that first sets `app.current_user_id`, `app.current_gym_id` and friends with `set_config(…, true)`, the equivalent of `SET LOCAL` ([src/server/db/run-in-context.ts](src/server/db/run-in-context.ts)).
+2. **Policies.** Every tenant table has `ENABLE` + `FORCE ROW LEVEL SECURITY`. Reads require `gymId = app_current_gym_id()` **and** that the current user is active staff of that gym, or has a live support session. Writes require active staff, so support access is read-only at the database level.
+3. **Fails closed.** A missing setting resolves to `NULL`, which matches no rows. Inserts are rejected.
+4. **Structural isolation.** Child rows reference parents by `(gymId, parentId)`, so a cross-gym reference is impossible even for the owner role.
+5. **Lint guard.** Features can't import the raw Prisma client (`eslint no-restricted-imports`). They must use `withTenant`, `withUser` or `withPlatformAdmin`.
+
+## 4a. Tenancy in the application
+
+Every gym URL is `/g/<gymSlug>/…`. The slug only chooses which of *your* gyms you mean. It is never trusted on its own.
+
+- **Pages and layouts** call `requireGymAccess(slug)` ([src/server/tenant](src/server/tenant)). It re-reads the session user from the database, then checks they are **active staff** of the gym with that slug, and builds a `TenantContext`: gym, role, permissions, plan, and subscription access. Anyone else gets a **404**, so other gyms' slugs can't be probed. A super admin without a staff role also gets a 404; support access arrives in Phase 3.
+- **Server actions** are wrapped in `gymAction()` ([src/server/actions/gym-action.ts](src/server/actions/gym-action.ts)). It runs the same tenant check, then the permission check (`assertCan`) and the read-only check for writes (`assertWritable`), then Zod validation with the shared schema. Failures come back as friendly messages and are logged on the server.
+- **API routes** do the same check. For example, `GET /api/g/<slug>/context` returns 401 without a session and 404 for other gyms.
+- **Database access** goes through `inTenant(ctx, tx => …)`. It sets the RLS context from the verified `TenantContext`, never from request input.
+- **Roles and permissions** are a single matrix in [src/domain/permissions.ts](src/domain/permissions.ts) (Owner, Manager, Front desk, Trainer). Navigation is filtered by it, and each page and action checks it again.
+- **Read-only mode** applies when a trial or subscription ends or the gym is suspended. A banner is shown, every write is refused, and the data is kept. It's computed from dates on each request, so it works even if no background job runs.
+
+**Sign-up** (`/signup`): gym details → owner account → plan, which starts a **14-day trial**. A signed-in user can add another gym and becomes its owner. Sign-up goes through the `signup_create_gym` database function: one transaction creates the gym, owner, trial, subscription history, default location and opening hours, counters and audit rows. Sign-up is rate-limited to 5 per hour per IP.
+
+**Gym switching:** use the gym menu at the top of the sidebar, or `/select-gym`. A user with exactly one gym goes straight to its dashboard after login.
+
+## 4b. Platform administration and subscriptions
+
+**Super admin area (`/admin`).** Super admins land here after login. `isSuperAdmin` is re-read from the database on every request; anyone else gets a 404.
+
+| Page | What it does |
+|---|---|
+| `/admin` | Platform analytics: gyms by status, MRR, trials ending soon, member and check-in totals, sign-ups per month, gyms per plan. Numbers come from the `platform_stats()` database function and are **aggregates only**. |
+| `/admin/gyms`, `/admin/gyms/[id]` | Gym list with search and status filter, and per-gym usage counts. The gym page has the subscription actions, subscription history, platform audit and support access. |
+| `/admin/plans` | Edit Starter / Growth / Pro: price, maximum members, staff and locations, and the reports, CSV export and class booking flags |
+| `/admin/support` | All support sessions: who, which gym, why, and when |
+| `/admin/audit` | Platform audit log (logins, failed logins, sign-ups, subscription, plan and support events). Append-only. |
+
+**Subscriptions (manual billing).** A super admin can activate (1–24 months), extend (days), change plan, suspend, reactivate or cancel a gym's subscription.
+- Destructive actions need a reason and a confirmation.
+- Each change runs in one transaction: it locks the subscription row, updates the gym and subscription, appends `SubscriptionHistory`, and writes a platform audit entry.
+- The rules are pure functions in [src/domain/subscription-changes.ts](src/domain/subscription-changes.ts). Persistence sits behind a `BillingProvider` interface ([src/server/billing](src/server/billing)), so a Stripe provider can plug in later and reuse the same history, audit and read-only behaviour.
+- `npm run jobs:run` (schedule it every few minutes) marks ended periods `EXPIRED`, with history, clears stale rate-limit buckets, generates in-app alerts and member reminders for every gym, and sends push alerts (`npm run jobs:watch` repeats it every minute while you test) (it runs with `--conditions=react-server` so the shared server modules load in a script). Read-only mode doesn't depend on it.
+
+**Plan limits and feature flags.**
+- `assertWithinLimit()` and `assertFeature()` run on the server before members, staff or locations are created, and before reports or exports. The UI shows upgrade messages such as *"Your Starter plan includes up to 150 members, and you've reached it. Upgrade your plan to add more."*
+- The database trigger `enforce_plan_limits` enforces the same limits again. It takes a per-gym advisory lock, so concurrent sign-ups can't overshoot. It applies to the owner role too, and to bulk inserts as a whole.
+- Lowering a plan never deletes data. It only blocks *new* rows beyond the new limit.
+- Owners see usage meters, included features and subscription history at **`/g/<slug>/billing`**.
+
+**Support access.** A super admin cannot open a gym's pages by default (404). To help a gym:
+1. Open the gym in `/admin`, enter a **reason** (at least 10 characters), and click *Start support access*. This creates a `SupportAccessSession` (60 minutes maximum, one at a time) and logs `support.start`.
+2. They land in the gym with a red banner. **Everything is read-only**: `assertWritable` refuses writes, and RLS write policies require real staff membership.
+3. **Every page they open is written to the gym's own audit log** as `support.view`, with `actorType = SUPPORT`.
+4. *End support session* (or expiry) closes access immediately. The session is re-validated against the database on every request (owner, gym and expiry). The browser cookie holds only the session id and grants nothing by itself.
+
+## 4c. Gym features: dashboard, members, membership plans
+
+**Dashboard (`/g/<slug>/dashboard`).** Every figure is a live query in the gym's RLS context and the **gym's time zone**:
+- active members (a membership covering today that isn't frozen or cancelled)
+- new sign-ups this month
+- revenue today and this month (payments minus refunds), shown only to roles with financial access
+- memberships expiring in the next 7 days and not yet renewed
+- today's check-ins
+- upcoming classes
+- 6-month revenue and membership-growth charts
+
+Trainers see their own clients and classes. Front desk doesn't see revenue.
+
+**Members (`/g/<slug>/members`).**
+- **Search** by name, member number (`M-000123`), email, or **full phone number**. Phone search goes through the per-gym blind index, so phones are never decrypted for searching.
+- **Filter** by active, frozen, expired or no membership, and **sort**. Pagination is server-side, so only one page of rows (and decrypted phones) is ever sent to the browser.
+- **Profile tabs:**
+  - contact details, emergency contact and health notes (decrypted for display)
+  - memberships, with freeze, unfreeze and cancel
+  - payments and outstanding invoices
+  - attendance
+  - encrypted staff notes
+- **Roles:** front desk can add members and edit **contact details only**. Managers and owners can edit everything and soft-delete. Trainers see **only their assigned clients**.
+- Member numbers are sequential per gym. Plan limits are enforced on create.
+- **Photos:** checked by their bytes as JPEG, PNG or WebP, 2 MB maximum. They're stored under `storage/<gymId>/member-photo/` and served only through the tenant-checked `/api/g/<slug>/files/<id>`.
+- **Audit:** every change is audited with field *names* only, never values.
+
+**Membership plans (`/g/<slug>/plans`).**
+- Monthly, quarterly, yearly or class pack, with price (entered in rupees, stored exactly in paise), duration or validity, and class credits.
+- **Freeze rules:** whether freezing is allowed, and the maximum days per membership.
+- **Cancellation rules:** notice period and fee.
+- Names are unique per gym (case-insensitive).
+- Editing a plan affects new sales only, because the sold price is snapshotted on the membership. Archiving is a soft delete.
+
+**Membership rules** ([src/domain/membership.ts](src/domain/membership.ts), unit-tested):
+- A membership is *expired* the day after its end date. No job is needed.
+- **Freezing** starts today. It moves the end date out by the same number of days and counts against the plan's allowance. Unfreezing early gives back the unused days.
+- **Cancelling** applies the plan's notice period, never beyond the paid end date. With no notice period (or if it hasn't started yet) it ends immediately.
+
+## 4d. Payments and check-in
+
+**Payments (`/g/<slug>/payments`).**
+- **Selling a membership** (`/payments/sell`):
+  - One transaction creates the membership, its invoice (plan price plus the gym's tax rate, exact integer paise) and an optional payment. The payment can be in full, partial, or none (invoice only).
+  - Renewals start the day after the current membership ends, and overlapping memberships are refused.
+- **Payment methods:** cash, card, or bank transfer/UPI (which needs a reference).
+- **Recording payments** on an open invoice locks the invoice row, so concurrent payments can never overpay. Part payments are allowed.
+- **Invoices:** a list filtered by Open, **Overdue** (open and past due, in the gym's local date), Paid, Void or All, plus a printable invoice page. An unpaid invoice can be **voided**, which also cancels the unpaid membership it created.
+- **Refunds** (managers and owners) can be full or partial and need a reason. They can optionally **cancel the membership in the same transaction**.
+  - The database trigger `enforce_refund_total` refuses any refund beyond the payment, including concurrent refunds and direct SQL, and keeps `Payment.status` correct.
+  - Refunds and check-ins are **immutable** for the app role. A correction is a new entry.
+- **Cancellation fees** from a membership's plan are invoiced automatically when it's cancelled.
+- The payments list shows received, refunded and net totals for the date range, and a breakdown by method.
+
+**Check-in (`/g/<slug>/check-in`, front desk, managers and owners).**
+- **Ways to find a member:**
+  - **Scan the member's QR code.** The code is on their profile, ready to print as a card. It encodes `FITCRM:<random check-in code>`, which contains no personal data.
+  - Use a USB scanner, which types the code and presses Enter.
+  - Use the camera, in browsers with `BarcodeDetector`.
+  - Type a name, or a member ID such as `M-000123`.
+- A code or member ID checks the member in straight away. A name shows candidates, each with an allowed or denied preview.
+- **Expired, cancelled, frozen and not-yet-started memberships are blocked** with the reason, plus a one-click *Renew membership*. Overdue invoices are flagged.
+- **Every attempt is recorded** as allowed or denied, with a timestamp, the method used, the staff member and the location, plus an audit entry.
+- Re-scanning the same member within 2 minutes isn't counted twice. A per-member advisory lock means even simultaneous scans produce one check-in.
+
+## 4e. Classes, staff and schedules
+
+**Classes (`/g/<slug>/classes`).**
+- **Setup** (`/classes/setup`, managers and owners): class types (name, colour, default length and capacity) and rooms (per location, with a maximum capacity).
+- **Scheduling** (`/classes/new`):
+  - Pick a class, trainer, room, date and gym-local start time, optionally repeated weekly for up to 12 weeks.
+  - Capacity can't exceed the room's.
+  - A trainer or room that is already busy at that time is refused, naming the clash.
+- **Weekly timetable** with filters by location, trainer and class type. Trainers see only their own classes.
+- **Booking** (front desk, managers, owners; needs the plan's *class bookings* feature):
+  - The member needs a membership that is valid on the **class date**, not frozen.
+  - An unlimited membership is used before a class pack. Packs spend one credit, and only when a spot is confirmed, never while waitlisted.
+  - **No overbooking.** The session row is locked (`FOR UPDATE`) for every booking, so simultaneous bookings for the last spot give one booking and a waitlist entry. A test fires 20 bookings at a 5-spot class at once.
+  - When the class is full, members join a numbered **waitlist**.
+- **Cancelling a booking** before the class starts returns a pack credit and **promotes the first eligible person** on the waitlist. Members whose membership lapsed in the meantime are skipped. Raising capacity also promotes.
+- **Cancelling a class** (managers, or the class's own trainer) cancels every booking and returns credits.
+- **Attendance** is marked by the trainer or a manager, from 30 minutes before the class until a day after.
+
+**Staff (`/g/<slug>/staff`).**
+- **Invitations:**
+  - Owners can invite any role. Managers can invite front desk and trainers.
+  - The link `…/invite/<token>` is shown **once**, and also emailed. Its token is 32 random bytes, and only its SHA-256 hash is stored.
+  - Invitations are single-use, expire after 7 days, and can be revoked.
+  - Pending invitations count toward the plan's staff limit.
+- **Accepting** goes through the `invitation_accept` database function, which locks the invitation:
+  - **New email:** the person creates an account, then lands on the gym's dashboard.
+  - **Existing account:** the person must be **signed in as that email**.
+  - One person can work at several gyms with different roles.
+- **Roles and removal** are owner only:
+  - The last owner can't be demoted or removed.
+  - Removal ends access to that gym immediately; the account and history stay.
+- **Staff profiles:** title, phone (encrypted), specialties, bio, and private staff notes (encrypted, managers only).
+- **Trainer clients:** members can be assigned to and removed from a trainer.
+- **Shifts:** per location, with overlaps for the same person refused.
+
+**My schedule (`/g/<slug>/schedule`)** shows the signed-in person's shifts and classes for the week.
+
+**Email in development.** Emails are not sent. The dev provider writes `.eml` files to `.dev-outbox/` (gitignored) and logs only the recipient, subject and file name. A real provider plugs in behind the `EmailProvider` interface ([src/server/email](src/server/email)).
+
+## 4f. Reports, notifications, settings and the audit log
+
+**Reports (`/g/<slug>/reports`)** are for owners and managers, on plans that include reports.
+- **Date range:** any range up to a year, or a preset (last 30 or 90 days, this month, last 12 months). Every figure is computed by PostgreSQL in the gym's time zone.
+- **Revenue:** money received minus refunds given, by day or month, by payment method and by membership plan.
+- **Attendance:**
+  - A weekday × hour heatmap of check-ins in local time, with hover details and a table view.
+  - The busiest time, the average per weekday, totals by location, and how many people were turned away at the door.
+- **Retention & churn:** for each month, the members active at the start, the number who were still active at the end, the number who lapsed (including cancellations) and the number who joined or returned.
+  - The current month is shown "to date". It's left out of the averages and the trend line.
+- **Class popularity:** per class type, the fill rate, full sessions, waitlist demand, the attendance rate (of bookings whose attendance was marked) and cancelled classes.
+- **CSV export** (`/api/g/<slug>/reports/<report>?from=&to=`) needs the plan's *CSV export* feature.
+  - The revenue export is a per-payment ledger.
+  - Files are UTF-8 with a BOM, so they open correctly in Excel.
+  - Text cells that start with `= + - @` are neutralised against spreadsheet formula injection.
+  - Every export is audited with the report, the range and the row count, never the contents.
+
+**Notifications (`/g/<slug>/notifications`, and the bell in the header).**
+- **Alerts and recipients:**
+  - Memberships ending within 7 days and not yet renewed: owner, managers and front desk.
+  - Overdue invoices: owner and managers.
+  - The gym's trial or subscription ending within 7 days: owner.
+  - A plan limit at 90% or more: owner.
+- **Generation:** `npm run jobs:run` creates alerts for every gym. Opening the notifications page also refreshes alerts, at most once every 10 minutes per gym.
+  - Each alert has a dedupe key, so nothing is ever sent twice.
+- **Privacy:** RLS lets each person read and update **only their own** notifications, and only the "read" marker can change.
+- **Using them:** clicking an alert marks it read and opens the member, invoice or billing page. *Mark all as read* clears the list.
+- **Channels:** delivery goes through a `NotificationChannel` interface ([src/server/notifications](src/server/notifications)). In-app is built; email or SMS can be added beside it.
+
+**Settings (`/g/<slug>/settings`, owner only; the database also lets only the owner update the gym row).**
+- **Gym profile:** name, contact details, address, time zone, currency and tax rate.
+  - The currency is locked once invoices or payments exist.
+  - A new tax rate applies to new invoices only.
+- **Locations & hours:** add or rename locations, up to the plan's limit, and set opening hours per day, including closed days.
+- **Branding:** the brand colour and a logo.
+  - The logo is a JPEG, PNG or WebP of up to 2 MB, checked by its bytes.
+  - It is stored per gym, served only to that gym's staff, and a database trigger ensures it is the gym's own file.
+- **Plan & billing** is linked from here.
+- Every change is audited with a before/after diff.
+
+**Audit log (`/g/<slug>/audit`, owner only).**
+- Filter by category, by staff member (including removed staff) and by date.
+- Support-access entries are labelled.
+- Entries are append-only, and personal values were redacted when each entry was written.
+
+## 5. Encryption
+
+Fields encrypted at the application level with **AES-256-GCM** ([src/server/crypto](src/server/crypto)):
+- Member: phone, address, date of birth, emergency contact, health notes
+- Staff: phone, staff notes
+- Member notes: body
+
+How values are stored and protected:
+- **Format:** `v<keyVersion>.<iv>.<ciphertext>.<tag>`, so the key version sits next to every value.
+- **AAD:** each value is bound to `gym|model.field|recordId`. A ciphertext copied to another gym, column or row fails to decrypt.
+- **Phone search** uses a per-gym **HMAC-SHA256 blind index** (`phoneBlindIndex`, exact match only), with a separate key.
+- **Passwords** use argon2id (m=19 MiB, t=2, p=1). Reset and invite tokens are stored only as SHA-256 hashes.
+- **Logs** pass through a redacting logger. Passwords, tokens, keys and personal fields are masked.
+
+**Rotating the encryption key:**
+1. `npm run keys:generate -- --encryption-version 2`, then append the output to `ENCRYPTION_KEYS`.
+2. Set `ENCRYPTION_ACTIVE_KEY_VERSION=2` and restart. New writes now use key 2.
+3. `npm run crypto:rotate` re-encrypts old values in batches. Run `npm run crypto:rotate -- --dry-run` to confirm 0 remain.
+4. Remove key 1 from `ENCRYPTION_KEYS`.
+
+> ⚠ **Back up `ENCRYPTION_KEYS` and `BLIND_INDEX_KEY` separately from the database.** Without them, encrypted personal data can't be recovered.
+
+## 6. Seed data and test accounts
+
+`npm run db:seed` (or `npx prisma db seed`) runs [prisma/seed.ts](prisma/seed.ts):
+- It runs as the owner role, truncates every table, then inserts fresh data.
+- It's safe to re-run, and uses a fixed faker seed (`20261002`), so names and amounts are identical every run. Dates are relative to the day you seed.
+- Personal fields are encrypted with the same module the app uses.
+
+| Gym | Slug | Plan | Status | Members |
+|---|---|---|---|---|
+| Iron Temple Fitness | `iron-temple` | Pro | Active | 190 (2 locations) |
+| Pulse Fitness Studio | `pulse-fitness` | Starter | Active | 95 |
+| Zen Strength Collective | `zen-strength` | Growth | Trial (14 days) | 120 |
+
+Each gym also gets:
+- 5–6 membership plans
+- Active, expired and frozen memberships
+- 6 months of payments, including overdue and refunded ones
+- 6 months of check-ins with realistic morning and evening peaks
+- 4 weeks of classes with bookings and waitlists
+- Staff shifts, trainer clients, notifications and audit log entries
+
+**Test logins:**
+
+| Email | Password | Gym | Role |
+|---|---|---|---|
+| `superadmin@fitcrm.example` | `SuperAdmin#2026` | (platform) | Super Admin |
+| `priya.nair@fitcrm.example` | `GymStaff#2026` | iron-temple / zen-strength | Trainer / **Manager** (gym switching) |
+| `owner@irontemple.example` | `GymStaff#2026` | iron-temple | Owner |
+| `manager1@irontemple.example`, `manager2@irontemple.example` | `GymStaff#2026` | iron-temple | Manager |
+| `frontdesk1@irontemple.example`, `frontdesk2@irontemple.example` | `GymStaff#2026` | iron-temple | Front desk |
+| `trainer1@irontemple.example` … `trainer4@irontemple.example` | `GymStaff#2026` | iron-temple | Trainer |
+| `owner@pulsefitness.example` | `GymStaff#2026` | pulse-fitness | Owner |
+| `manager1@pulsefitness.example` | `GymStaff#2026` | pulse-fitness | Manager |
+| `frontdesk1@pulsefitness.example`, `frontdesk2@pulsefitness.example` | `GymStaff#2026` | pulse-fitness | Front desk |
+| `trainer1@pulsefitness.example` … `trainer3@pulsefitness.example` | `GymStaff#2026` | pulse-fitness | Trainer |
+| `owner@zenstrength.example` | `GymStaff#2026` | zen-strength | Owner |
+| `manager1@zenstrength.example` | `GymStaff#2026` | zen-strength | Manager |
+| `frontdesk1@zenstrength.example`, `frontdesk2@zenstrength.example` | `GymStaff#2026` | zen-strength | Front desk |
+| `trainer1@zenstrength.example` … `trainer4@zenstrength.example` | `GymStaff#2026` | zen-strength | Trainer |
+
+**Member app logins** (mobile API; members can't sign in to the web portal):
+
+| Login | Password | Gym | Notes |
+|---|---|---|---|
+| `member1@irontemple.example` … `member20@irontemple.example` | `Member#2026` | iron-temple (Pro: member app ✓) | linked to members M-000001…M-000020 |
+| `member1@zenstrength.example` … `member20@zenstrength.example` | `Member#2026` | zen-strength (Growth: member app ✓) | |
+| `member1@pulsefitness.example` … `member20@pulsefitness.example` | `Member#2026` | pulse-fitness (Starter: **no** member app) | to see the "not in your plan" path |
+| `alex.member@fitcrm.example` | `Member#2026` | iron-temple **and** zen-strength | one person, member of two gyms (gym switching) |
+| `+919800000022` (phone only, no email) | `Member#2026` | iron-temple | one-time code by SMS (dev: `.dev-outbox/*.sms.txt`) |
+| `member2@<gym>` | `Member#2026` | each gym | has class-reminder alerts turned off |
+| `member19@irontemple.example` | `Member#2026` | iron-temple | has asked for account deletion (web: Members → *1 deletion request*) |
+| `member18@pulsefitness.example` | `Member#2026` | pulse-fitness | deletion request rejected by the gym, with a note |
+
+Pending member app invites at Iron Temple, to try the invite flow:
+- **Front-desk code** `WELC-OME2`, for member #23. Creating an account with a front-desk code also needs a 6-digit confirmation code. It's emailed to that member's address, and in development the email is written to `.dev-outbox/`.
+- **Email link token** `demo-invite-iron-temple-member-24`, for member #24.
+
+Both stay valid for 30 days after seeding.
+
+Staff use the mobile app with their normal logins above. Pro and Growth include the staff mobile app; Starter doesn't.
+
+## 6a. Mobile API (`/api/mobile/v1`)
+
+This is the backend for the FitCRM mobile app. The design is in [docs/MOBILE_DESIGN.md](docs/MOBILE_DESIGN.md).
+- **One contract.** Every endpoint is defined once in [packages/shared/src/api/contract.ts](packages/shared/src/api/contract.ts) with Zod schemas. The server validates requests with it, and every response is filtered through it, so unknown fields never leave the server.
+- **Generated from it:**
+  - the OpenAPI document, served at `/api/mobile/v1/openapi.json`, or written to `packages/shared/openapi.json` with `npm run openapi:generate`;
+  - the typed client in `@fitcrm/shared/api/client`.
+
+**Authentication:**
+- **Sign in** with `POST /auth/login` (email or phone, plus password), with a one-time code (`/auth/otp/request` then `/auth/otp/verify`), or by redeeming a member invite (`/auth/invite/redeem`).
+- **Access tokens** are JWTs that last 15 minutes, signed with a key derived from `MOBILE_SECRET`.
+- **Refresh tokens** rotate on every `/auth/refresh` and only their hash is stored.
+  - **Reusing an already-used refresh token revokes that whole device session.**
+  - Refresh tokens expire after 30 days unused, and a session lasts at most 90 days.
+- **Choosing a gym:** `POST /auth/select-gym` returns a token for one gym, after checking that you're active staff there or have an active member account.
+  - Every request re-checks the device session, your session version, your membership in the gym and the plan's *mobile app* or *member app* feature.
+  - Removing someone, revoking a device or changing a password takes effect on their next request.
+- **Devices:** you can list and revoke yours with `GET /me/devices` and `DELETE /me/devices/{id}`.
+- **Password change and "sign out everywhere"** (web or mobile) end every session on every device.
+
+**Member accounts:**
+- Staff invite a member with `POST /staff/members/{memberId}/app-invite`, choosing one of:
+  - `EMAIL`: a link valid for 7 days;
+  - `SMS`: a link valid for 7 days;
+  - `CODE`: a front-desk code valid for 30 minutes, shown to the staff member once.
+- Each invite is bound to the member's email or phone on record and is single-use. Only its hash is stored.
+- Redeeming either creates a login for exactly that email or phone, or links an existing login after its password is checked.
+- One login can be staff in one gym and a member in another.
+
+**SMS:** set `SMS_PROVIDER=twilio` with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` to send real messages. The default, `dev-outbox`, writes `.sms.txt` files to `.dev-outbox/`, like emails.
+
+**Trying it from the command line** (`npm run dev`, Git Bash):
+
+```bash
+# Sign in as a member
+curl -s localhost:3000/api/mobile/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"identifier":"member1@irontemple.example","password":"Member#2026","device":{"name":"curl","platform":"android"}}'
+# → accessToken, refreshToken, gyms[]. Then scope to the gym:
+curl -s localhost:3000/api/mobile/v1/auth/select-gym -H "Authorization: Bearer <accessToken>" \
+  -H 'Content-Type: application/json' -d '{"gymSlug":"iron-temple"}'
+curl -s localhost:3000/api/mobile/v1/gym -H "Authorization: Bearer <gym accessToken>"
+```
+
+**The mobile app** lives in [mobile/](mobile/). It's a standalone Expo app, because Expo pins a different React version than Next.js, and it imports the shared contract from `packages/shared`. To run it on your phone, see [mobile/README.md](mobile/README.md).
+
+**Member endpoints** (`/member/*`) run as the member:
+- **Reads** go through member-scoped RLS, so the database returns only that member's own rows plus the gym's catalog.
+- **Booking and cancelling** reuse the staff booking service in a *member-action* context. During that one action, the transaction may touch the class's bookings and members' class credits, because waitlist promotion moves others up. A database trigger lets non-staff change only a class credit, one at a time.
+- **No overbooking:** both staff and members queue on the same per-class lock.
+- **Member card QR** is `FCM2.<memberId>.<exp>.<nonce>.<sig>`:
+  - it is valid for 45 s, and the app refreshes it every 30 s;
+  - the gym is bound into the HMAC;
+  - it is single-use: the first scan spends the nonce, so screenshots don't work.
+
+  The web check-in page and the staff app accept it. Printed codes can be turned off per gym in **Settings → Member app**, where the booking window and cancellation cutoff are also set.
+
+**Staff endpoints** (`/staff/*`) run as the staff member, through the same services as the web portal:
+- **Covered:** check-in (QR scan, member number or name), dashboard, alerts, member search and profile, adding members, selling memberships, recording payments, and the class overview.
+- **Same rules as the web:** role permissions, plan limits and audit all apply. Writes are refused with `409 read_only` while a gym is read-only.
+- **Money by role:** front desk sees no revenue, and trainers see neither revenue nor overdue payments.
+
+**Trainer and fitness endpoints** (`/trainer/*`, `/member/workouts`, `/member/progress`, `/member/training-sessions`):
+- **Trainers:** their schedule (classes, personal training sessions, shifts), class attendance, clients, private notes, workout plans and templates, and PT bookings with no double-booking.
+- **Members:** their plans, marking workouts done, logging measurements, and progress photos.
+- **Who sees what** is enforced by row-level security:
+  - Trainers see their assigned clients only; managers and owners see everyone, except progress photos.
+  - Photos are visible to the member and their assigned trainers only.
+  - Trainer notes are visible to their author and managers, never the member.
+- **Encryption:** measurements, plan notes, workout notes and trainer notes are encrypted.
+- **Photos** are re-encoded on upload, which removes location and other metadata, and are served only through 5-minute signed links (`/api/mobile/v1/progress-photos/{id}`). Uploads are `multipart/form-data`.
+
+**Notifications, announcements and profile** (`/notifications`, `/announcements`, `/me/push-token`, `/me/notification-preferences`, `/member/profile`, `/member/deletion-request`):
+- **Inbox:** every person (staff or member) sees and marks read only their own notifications. Row-level security now has member policies too.
+- **What members are told about:**
+  - a class they booked starts within 2 hours;
+  - a waitlist spot opened and they were booked in;
+  - their membership ends within 7 days;
+  - a payment is due within 3 days, or is overdue;
+  - gym announcements.
+- **What staff are told about:** a class in the next 24 hours is full, and a member asked for account deletion (owners and managers). The existing alerts stay as they were.
+- **Push:**
+  - The jobs process sends push alerts from inbox rows through Expo, as the database owner. It's the only code that can read everyone's device tokens.
+  - Lock-screen text is generic: "You have a payment due. Open the app for details." No names, amounts, invoice numbers or class names. Announcements show their title.
+  - Preferences switch off push per category; the inbox keeps everything.
+  - Tokens are one per device per gym, removed on sign-out, and ignored once the device session is revoked.
+  - Expo's receipts mark devices that are no longer registered, so they aren't sent to again.
+- **Profile:**
+  - Members update their contact details and emergency contact through a narrow security-definer function. The app server encrypts the values first.
+  - The change is audited as the member, recording field names only.
+- **Deletion:**
+  - A member's request alerts owners and managers. They complete it on the web (Members → Deletion requests) or reject it with a note.
+  - Completing anonymises the member and disables their app account.
+  - It erases their measurements, progress photos (with the files), workouts, trainer notes, inbox and devices for that gym.
+  - Invoices, payments and visit records are kept, without the name.
+
+**Web portal additions:**
+- **Announcements** (owners and managers): publish to members, staff or both.
+- **Member app panel** on each member's profile: invite by email, SMS or a one-time front-desk code, see whether they use the app, and turn their access off or on.
+- **Deletion requests** (owners and managers).
+- **Workout plans:** managers see every trainer's plans; trainers see their own. Filter, write templates, edit days and exercises, activate or archive, and give a plan to a client.
+
+**Gym logos** reach the app as short-lived signed paths (`/api/mobile/v1/files/{id}?u&g&e&s`, valid for 5 minutes). The file route checks the signature **and** re-checks the user's access to the gym before serving anything.
+
+**From a phone on the same Wi-Fi:**
+1. Run `npm run dev:lan`, which binds to every network interface.
+2. Use `http://<your PC's IPv4 from ipconfig>:3000`.
+3. Allow inbound TCP 3000 on the Windows Firewall **Private** profile.
+
+The Android emulator reaches your PC at `http://10.0.2.2:3000`.
+
+## 7. Tests
+
+| Command | What it runs |
+|---|---|
+| `npm test` | Unit and integration tests (Vitest) |
+| `npm run test:unit` | Business rules, encryption, env validation, password hashing, redaction |
+| `npm run test:integration` | Services, RLS and tenant isolation against a real PostgreSQL (`gym_saas_test`), through the restricted `gym_app` role. [isolation-matrix.test.ts](tests/integration/isolation-matrix.test.ts) loads the full seed and checks **every** table that has a `gymId` column, found from the database catalog, so a new table is covered automatically. For each one it checks that RLS is enabled and forced, that its policies are bound to the current gym, and that gym A cannot read, update, delete, insert into or move rows into gym B. It also checks that support access cannot write. |
+| `npm test -- tests/integration/mobile-api-matrix.test.ts` | The mobile API, endpoint by endpoint, **driven by the shared contract**, so new endpoints are covered automatically. Every endpoint has a route and every route is in the contract. No token or a forged one gets 401. Members are kept off staff endpoints and staff off member endpoints. Gym B's staff and members get "not found" for gym A's ids, in the path or the body, and gym A's rows stay unchanged. One member gets "not found" for another member's records. Nothing gym A owns appears in anything gym B can list. Turning the app off in the plan blocks live tokens. |
+| `cd mobile && maestro test .maestro` | Maestro end-to-end flows on a development build (see [mobile/README.md](mobile/README.md#end-to-end-tests-maestro)) |
+| `npm run test:e2e` | Playwright against `next dev` on port 3100 (its own `.next-e2e` build directory, so it can run alongside `npm run dev`), using `gym_saas_test` reset and seeded per run |
+
+The test databases are rebuilt from migrations on every run. The suites refuse any database whose name doesn't end in `_test`, so your dev data is never touched. First time only: `npx playwright install chromium`.
+
+## 8. Backups and restore
+
+Back up the database (custom format, compressed). Run as the owner role:
+
+```bash
+pg_dump -h localhost -U postgres -d gym_saas -n "gym-admin-portal" -Fc -f gym_saas_$(date +%Y%m%d_%H%M).dump
+```
+
+Restore into an empty database:
+
+```bash
+createdb -h localhost -U postgres gym_saas_restore
+psql     -h localhost -U postgres -d gym_saas_restore -c 'CREATE SCHEMA "gym-admin-portal"'
+pg_restore -h localhost -U postgres -d gym_saas_restore --no-owner --role=postgres gym_saas_YYYYMMDD_HHMM.dump
+# then point MIGRATION_DATABASE_URL/DATABASE_URL at it and re-apply role + grants:
+npm run db:setup-roles && npm run db:grants
+```
+
+Notes:
+- The dump contains **ciphertext** for personal fields. Restoring it is only useful with the matching `ENCRYPTION_KEYS` and `BLIND_INDEX_KEY`, so store those in your secrets manager, not next to the dump.
+- RLS policies, functions and triggers are part of the dump. Roles and grants are not, which is why the last step re-applies them.
+- For production, schedule `pg_dump` daily (Windows Task Scheduler or cron), keep at least 30 days, test a restore regularly, and consider WAL archiving / PITR.
+
+## 9. Project structure
+
+```
+prisma/              schema, migrations (incl. RLS), sql/ role + grants, seed/
+scripts/             db.ts (roles/migrate/reset), generate-keys.ts, crypto-rotate.ts, jobs-run.ts
+src/app/             routes: (auth)/login + signup, select-gym, g/[gymSlug]/…, api/
+src/server/          server-only code: env, db (RLS context), auth, crypto, security, audit, services
+src/domain/          pure business rules (permissions, subscription access, money, slugs, …)
+src/lib/             client-safe helpers and shared Zod schemas
+src/components/      shadcn/ui and layout components
+tests/               unit/, integration/ (real Postgres), e2e/ (Playwright), support/
+docs/DESIGN.md       approved architecture
+```
+
+## 10. Security model
+
+**Tenant isolation, in three layers:**
+1. **PostgreSQL RLS** on every table.
+   - The app connects as `gym_app` (no superuser, no BYPASSRLS), and every query runs in a transaction that sets `app.current_gym_id` / `app.current_user_id` with `SET LOCAL`.
+   - Without a gym context, tenant tables return nothing.
+   - Cross-table references use composite `(gymId, id)` foreign keys, so a row can never point at another gym's row.
+   - `gymId` can't be changed after a row is created.
+2. **A tenant-scoped data layer.** Services receive a `TenantContext`, which is built only from the session and a database membership check. The gym id never comes from the URL or the request body; the slug only selects which of the user's gyms to use.
+3. **Server checks on every entry point.**
+   - Pages call `requireGymAccess`; server actions go through `gymAction`, which checks the permission, read-only state and Zod input; API routes call `getGymAccess`.
+   - Other gyms' pages return 404, not 403, so slugs can't be probed.
+
+**Roles** are enforced on the server from one permission matrix ([src/domain/permissions.ts](src/domain/permissions.ts)).
+- Hiding things in the UI is cosmetic only.
+- Managers can only act on the roles they're allowed to assign (front desk and trainers).
+- Trainers see only their own clients and classes.
+- Super admins have no tenant access except through an explicit, time-limited, **read-only** support session. Every page, action and API call made during one is written to that gym's audit log.
+
+**Accounts and sessions:**
+- Passwords are hashed with argon2id. Unknown emails take the same time as wrong passwords.
+- Logins are rate limited per IP, per account and IP, and per account.
+- Sessions are JWTs re-validated against the database on every request.
+- Changing your password or using *Sign out everywhere* (`/account`) bumps `sessionVersion`, which ends every existing session at once.
+- Removing someone from a gym ends their access to it on their next request.
+
+**Data protection:**
+- Personal fields are encrypted with AES-256-GCM, with key versions and the record bound into the ciphertext.
+- Phone search uses an HMAC blind index.
+- Logs and audit entries redact personal data and secrets.
+- Invitation and other tokens are random, single-use and stored only as hashes.
+- Money is stored as integers.
+- Audit logs, refunds and check-ins are append-only.
+- Members, plans and payments use soft delete.
+
+**Web:**
+- A CSP with a per-request nonce, `frame-ancestors 'none'`, HSTS (in production), `nosniff` and COOP.
+- CSRF protection from Auth.js and Next's Origin check on server actions.
+- Post-login redirects are restricted to same-origin paths.
+- Uploads are type-checked by their bytes (JPEG, PNG or WebP, up to 2 MB), stored outside `public/`, and served only to the gym's own staff.
+- CSV exports neutralise spreadsheet formulas.
+
+## 11. Production checklist and known limitations
+
+Before going live:
+- Run behind a reverse proxy that terminates TLS and **appends** the client address to `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies, and `APP_URL` to the `https://` address.
+- Keep `ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` and `AUTH_SECRET` in a secrets manager (or a KMS), never in the repository or next to backups. Rotate keys with `npm run crypto:rotate`.
+- Schedule `npm run jobs:run` every few minutes. It expires subscriptions, cleans up rate-limit buckets, generates alerts and reminders, and sends push alerts.
+- For push, set `PUSH_PROVIDER=expo`, and build the app with `EAS_PROJECT_ID` set (Phase 7).
+- Schedule backups and test restores (§8).
+- Ship logs to a central store and alert on `error` entries.
+- Point `STORAGE_DIR` at durable, backed-up storage, or implement the `StorageProvider` interface for S3 or GCS.
+- Replace the dev email outbox with a real provider behind the `EmailProvider` interface.
+- Run `npm audit` on each release (see the notes in [docs/DESIGN.md](docs/DESIGN.md)).
+
+Known limitations, deliberately out of scope for this build:
+- **No email verification or password reset by email.** Sign-up accepts any address, and a forgotten password needs an administrator. Both need a real email provider; the `PasswordResetToken` table and rate limits are already in place.
+- **Account lockout by brute force.** The per-account login limit (20 attempts per 15 minutes) also blocks the real owner while someone else is hammering the account. Mitigations are MFA, CAPTCHA or an email unlock link.
+- **No MFA.** It is recommended for owners and super admins.
+- **Billing is manual.** Payments go through the `BillingProvider` interface; there is no card processor yet.
+- **Database write policies check the gym, not the role.** RLS guarantees that one gym can never touch another's data. Which role may change what *inside* a gym is enforced by the app's permission checks, which are covered by tests.

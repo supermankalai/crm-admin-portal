@@ -1,0 +1,1300 @@
+// Gym SaaS — multi-tenant schema.
+//
+// Conventions (see docs/DESIGN.md):
+// - Every tenant-owned table has a required `gymId` FK + index and is protected by RLS
+//   (prisma/migrations/*_rls). Child → parent references are composite FKs on (gymId, id)
+//   so a row can never point at another gym's row.
+// - Money is Int in minor units. `*Enc` columns hold AES-256-GCM ciphertext, `*BlindIndex`
+//   columns hold HMAC-SHA256 search tokens.
+// - `emailKey` / `nameKey` are maintained by triggers to give "unique among non-deleted rows".
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum GymRole {
+  OWNER
+  MANAGER
+  FRONT_DESK
+  TRAINER
+}
+
+enum GymStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELLED
+}
+
+enum SubscriptionAction {
+  TRIAL_STARTED
+  ACTIVATED
+  EXTENDED
+  PLAN_CHANGED
+  SUSPENDED
+  REACTIVATED
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingProviderKind {
+  MANUAL
+  STRIPE
+}
+
+enum StaffStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum PlanType {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CLASS_PACK
+}
+
+enum MembershipStatus {
+  ACTIVE
+  FROZEN
+  CANCELLED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+}
+
+enum PaymentStatus {
+  COMPLETED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  VOID
+}
+
+enum CheckInMethod {
+  NAME_SEARCH
+  MEMBER_ID
+  QR
+}
+
+enum CheckInResult {
+  ALLOWED
+  DENIED_EXPIRED
+  DENIED_FROZEN
+  DENIED_NO_MEMBERSHIP
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingStatus {
+  BOOKED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+enum NotificationType {
+  MEMBERSHIP_EXPIRING
+  PAYMENT_OVERDUE
+  PLAN_LIMIT_NEAR
+  SUBSCRIPTION_EXPIRING
+  SYSTEM
+  CLASS_REMINDER
+  WAITLIST_PROMOTED
+  PAYMENT_DUE
+  ANNOUNCEMENT
+  CLASS_FULL
+  DELETION_REQUEST
+}
+
+enum FileKind {
+  GYM_LOGO
+  MEMBER_PHOTO
+}
+
+enum AuditActorType {
+  USER
+  SUPPORT
+  SYSTEM
+  /// A member acting through the member app (booking, cancelling, profile).
+  MEMBER
+}
+
+// ─────────────────────────── Platform tables ───────────────────────────
+
+model User {
+  id              String    @id @default(cuid(2))
+  /// Optional since mobile: member accounts may be phone-only. CHECK: email or phone present.
+  email           String?   @unique // always lower-case (CHECK constraint)
+  /// Encrypted (platform scope) + platform-wide blind index for phone login.
+  phoneEnc        String?
+  phoneBlindIndex String?   @unique
+  name            String
+  passwordHash    String
+  isSuperAdmin    Boolean   @default(false)
+  sessionVersion  Int       @default(1)
+  lastLoginAt     DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  staff             StaffMember[]
+  memberAccounts    MemberAccount[]
+  deviceSessions    MobileDeviceSession[]
+  loginOtps         LoginOtp[]
+  resetTokens       PasswordResetToken[]
+  notifications     Notification[]
+  supportAccess     SupportAccessSession[]
+  pushTokens        PushToken[]
+  notificationPrefs NotificationPreference[]
+  deletionRequests  AccountDeletionRequest[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid(2))
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PlatformPlan {
+  id                   String   @id @default(cuid(2))
+  code                 String   @unique
+  name                 String
+  description          String   @default("")
+  priceMonthlyMinor    Int
+  currency             String   @default("INR")
+  maxMembers           Int
+  maxStaff             Int
+  maxLocations         Int
+  featureReports       Boolean
+  featureCsvExport     Boolean
+  featureClassBookings Boolean
+  /// Staff use of the mobile app.
+  featureMobileApp     Boolean  @default(false)
+  /// Member app accounts (card, booking, workouts…).
+  featureMemberApp     Boolean  @default(false)
+  sortOrder            Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(3)
+
+  subscriptions GymSubscription[]
+}
+
+model Gym {
+  id                       String    @id @default(cuid(2))
+  slug                     String    @unique
+  name                     String
+  status                   GymStatus @default(TRIAL)
+  timezone                 String    @default("Asia/Kolkata")
+  currency                 String    @default("INR")
+  taxRateBps               Int       @default(1800)
+  brandColor               String    @default("#ea580c")
+  logoFileId               String?
+  email                    String?
+  phone                    String?
+  address                  String?
+  /// Member app rules: how far ahead members may book, and the latest cancellation (hours before).
+  memberBookingDaysAhead   Int       @default(14)
+  memberCancelHours        Int       @default(2)
+  /// Accept printed/static check-in codes as well as the member app's rotating QR code.
+  acceptStaticCheckInCodes Boolean   @default(true)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime  @updatedAt @db.Timestamptz(3)
+
+  subscription        GymSubscription?
+  subscriptionHistory SubscriptionHistory[]
+  supportSessions     SupportAccessSession[]
+  staff               StaffMember[]
+  invitations         StaffInvitation[]
+  shifts              StaffShift[]
+  trainerClients      TrainerClient[]
+  locations           Location[]
+  openingHours        OpeningHours[]
+  counters            GymCounter[]
+  membershipPlans     MembershipPlan[]
+  members             Member[]
+  memberNotes         MemberNote[]
+  memberships         Membership[]
+  freezes             MembershipFreeze[]
+  invoices            Invoice[]
+  payments            Payment[]
+  refunds             Refund[]
+  checkIns            CheckIn[]
+  rooms               Room[]
+  classTypes          ClassType[]
+  classSessions       ClassSession[]
+  bookings            Booking[]
+  notifications       Notification[]
+  files               FileAsset[]
+  auditLogs           AuditLog[]
+  memberAccounts      MemberAccount[]
+  memberAppInvites    MemberAppInvite[]
+  workoutPlans        WorkoutPlan[]
+  workoutPlanDays     WorkoutPlanDay[]
+  workoutExercises    WorkoutExercise[]
+  workoutCompletions  WorkoutCompletion[]
+  progressEntries     ProgressEntry[]
+  progressPhotos      ProgressPhoto[]
+  trainerClientNotes  TrainerClientNote[]
+  trainingSessions    TrainingSession[]
+  pushTokens          PushToken[]
+  notificationPrefs   NotificationPreference[]
+  announcements       Announcement[]
+  deletionRequests    AccountDeletionRequest[]
+}
+
+model GymSubscription {
+  id                     String              @id @default(cuid(2))
+  gymId                  String              @unique
+  planId                 String
+  status                 SubscriptionStatus
+  trialEndsAt            DateTime?           @db.Timestamptz(3)
+  currentPeriodStart     DateTime            @db.Timestamptz(3)
+  currentPeriodEnd       DateTime            @db.Timestamptz(3)
+  provider               BillingProviderKind @default(MANUAL)
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  createdAt              DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym  Gym          @relation(fields: [gymId], references: [id])
+  plan PlatformPlan @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+}
+
+/// Append-only (no UPDATE/DELETE grant for the app role + trigger).
+model SubscriptionHistory {
+  id                String              @id @default(cuid(2))
+  gymId             String
+  action            SubscriptionAction
+  fromPlanId        String?
+  toPlanId          String?
+  fromStatus        SubscriptionStatus?
+  toStatus          SubscriptionStatus
+  previousPeriodEnd DateTime?           @db.Timestamptz(3)
+  newPeriodEnd      DateTime?           @db.Timestamptz(3)
+  actorUserId       String?
+  note              String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym Gym @relation(fields: [gymId], references: [id])
+
+  @@index([gymId, createdAt])
+}
+
+model SupportAccessSession {
+  id           String    @id @default(cuid(2))
+  gymId        String
+  superAdminId String
+  reason       String
+  startedAt    DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime  @db.Timestamptz(3)
+  endedAt      DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym        Gym  @relation(fields: [gymId], references: [id])
+  superAdmin User @relation(fields: [superAdminId], references: [id])
+
+  @@index([gymId])
+  @@index([superAdminId, expiresAt])
+}
+
+/// Platform-level events (logins, sign-ups, super admin actions). Append-only.
+model PlatformAuditLog {
+  id          String   @id @default(cuid(2))
+  actorUserId String?
+  gymId       String?
+  action      String
+  targetType  String?
+  targetId    String?
+  metadata    Json     @default("{}")
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([gymId, createdAt])
+}
+
+model RateLimitBucket {
+  key         String   @id
+  count       Int
+  windowStart DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// ──────────────────── Tenant tables (gymId + RLS) ────────────────────
+
+model StaffMember {
+  id          String      @id @default(cuid(2))
+  gymId       String
+  userId      String
+  role        GymRole
+  status      StaffStatus @default(ACTIVE)
+  title       String?
+  bio         String?
+  specialties String[]    @default([])
+  phoneEnc    String?
+  notesEnc    String?
+  removedAt   DateTime?   @db.Timestamptz(3)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  gym  Gym  @relation(fields: [gymId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  invitationsSent  StaffInvitation[]
+  shifts           StaffShift[]
+  clients          TrainerClient[]
+  notesAuthored    MemberNote[]
+  paymentsRecorded Payment[]
+  refundsRecorded  Refund[]
+  checkInsRecorded CheckIn[]
+  classesTaught    ClassSession[]
+  filesUploaded    FileAsset[]
+  appInvitesSent   MemberAppInvite[]
+  workoutPlans     WorkoutPlan[]
+  clientNotes      TrainerClientNote[]
+  trainingSessions TrainingSession[]
+  announcements    Announcement[]
+  deletionsHandled AccountDeletionRequest[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, userId])
+  @@index([userId])
+  @@index([gymId, role])
+}
+
+model StaffInvitation {
+  id          String    @id @default(cuid(2))
+  gymId       String
+  email       String
+  role        GymRole
+  tokenHash   String    @unique
+  expiresAt   DateTime  @db.Timestamptz(3)
+  acceptedAt  DateTime? @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
+  invitedById String
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  invitedBy StaffMember @relation(fields: [gymId, invitedById], references: [gymId, id])
+
+  @@index([gymId, email])
+}
+
+model StaffShift {
+  id         String   @id @default(cuid(2))
+  gymId      String
+  staffId    String
+  locationId String
+  startsAt   DateTime @db.Timestamptz(3)
+  endsAt     DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  gym      Gym         @relation(fields: [gymId], references: [id])
+  staff    StaffMember @relation(fields: [gymId, staffId], references: [gymId, id])
+  location Location    @relation(fields: [gymId, locationId], references: [gymId, id])
+
+  @@index([gymId, startsAt])
+  @@index([staffId, startsAt])
+}
+
+model TrainerClient {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  trainerId String
+  memberId  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym     Gym         @relation(fields: [gymId], references: [id])
+  trainer StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
+  member  Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@unique([trainerId, memberId])
+  @@index([gymId, memberId])
+}
+
+model Location {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  name      String
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym          Gym            @relation(fields: [gymId], references: [id])
+  shifts       StaffShift[]
+  openingHours OpeningHours[]
+  rooms        Room[]
+  checkIns     CheckIn[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, name])
+}
+
+model OpeningHours {
+  id          String   @id @default(cuid(2))
+  gymId       String
+  locationId  String
+  dayOfWeek   Int
+  openMinute  Int
+  closeMinute Int
+  isClosed    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  gym      Gym      @relation(fields: [gymId], references: [id])
+  location Location @relation(fields: [gymId, locationId], references: [gymId, id])
+
+  @@unique([locationId, dayOfWeek])
+  @@index([gymId])
+}
+
+model GymCounter {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  key       String
+  value     Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym Gym @relation(fields: [gymId], references: [id])
+
+  @@unique([gymId, key])
+}
+
+model MembershipPlan {
+  id                     String    @id @default(cuid(2))
+  gymId                  String
+  name                   String
+  nameKey                String? // trigger: lower(name) while not deleted
+  description            String?
+  type                   PlanType
+  priceMinor             Int
+  durationDays           Int
+  classCredits           Int?
+  allowFreeze            Boolean   @default(false)
+  maxFreezeDays          Int       @default(0)
+  cancellationNoticeDays Int       @default(0)
+  cancellationFeeMinor   Int       @default(0)
+  isActive               Boolean   @default(true)
+  deletedAt              DateTime? @db.Timestamptz(3)
+  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym         Gym          @relation(fields: [gymId], references: [id])
+  memberships Membership[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, nameKey])
+  @@index([gymId, isActive])
+}
+
+model Member {
+  id                  String    @id @default(cuid(2))
+  gymId               String
+  memberNumber        Int
+  firstName           String
+  lastName            String
+  email               String?
+  emailKey            String? // trigger: lower(email) while not deleted
+  phoneEnc            String?
+  phoneBlindIndex     String?
+  addressEnc          String?
+  dateOfBirthEnc      String?
+  emergencyContactEnc String?
+  healthNotesEnc      String?
+  photoFileId         String?
+  checkInCode         String
+  joinedAt            DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt           DateTime? @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym                Gym                      @relation(fields: [gymId], references: [id])
+  photo              FileAsset?               @relation(fields: [gymId, photoFileId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  notes              MemberNote[]
+  memberships        Membership[]
+  invoices           Invoice[]
+  payments           Payment[]
+  checkIns           CheckIn[]
+  bookings           Booking[]
+  trainers           TrainerClient[]
+  appAccount         MemberAccount?
+  appInvites         MemberAppInvite[]
+  workoutPlans       WorkoutPlan[]
+  workoutCompletions WorkoutCompletion[]
+  progressEntries    ProgressEntry[]
+  progressPhotos     ProgressPhoto[]
+  trainerNotes       TrainerClientNote[]
+  trainingSessions   TrainingSession[]
+  deletionRequests   AccountDeletionRequest[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, memberNumber])
+  @@unique([gymId, checkInCode])
+  @@unique([gymId, emailKey])
+  @@index([gymId, lastName, firstName])
+  @@index([gymId, phoneBlindIndex])
+  @@index([gymId, deletedAt])
+}
+
+model MemberNote {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  memberId  String
+  authorId  String
+  bodyEnc   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym         @relation(fields: [gymId], references: [id])
+  member Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  author StaffMember @relation(fields: [gymId, authorId], references: [gymId, id])
+
+  @@index([gymId, memberId, createdAt])
+}
+
+model Membership {
+  id                    String           @id @default(cuid(2))
+  gymId                 String
+  memberId              String
+  planId                String
+  status                MembershipStatus @default(ACTIVE)
+  startDate             DateTime         @db.Date
+  endDate               DateTime         @db.Date
+  priceMinor            Int
+  classCreditsRemaining Int?
+  cancelledAt           DateTime?        @db.Timestamptz(3)
+  cancelReason          String?
+  createdAt             DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @db.Timestamptz(3)
+
+  gym            Gym                @relation(fields: [gymId], references: [id])
+  member         Member             @relation(fields: [gymId, memberId], references: [gymId, id])
+  plan           MembershipPlan     @relation(fields: [gymId, planId], references: [gymId, id])
+  freezes        MembershipFreeze[]
+  invoices       Invoice[]
+  creditBookings Booking[]          @relation("BookingCredit")
+
+  @@unique([gymId, id])
+  @@index([gymId, memberId])
+  @@index([gymId, status, endDate])
+}
+
+model MembershipFreeze {
+  id           String   @id @default(cuid(2))
+  gymId        String
+  membershipId String
+  startDate    DateTime @db.Date
+  endDate      DateTime @db.Date
+  reason       String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  gym        Gym        @relation(fields: [gymId], references: [id])
+  membership Membership @relation(fields: [gymId, membershipId], references: [gymId, id])
+
+  @@index([gymId, membershipId])
+}
+
+model Invoice {
+  id              String        @id @default(cuid(2))
+  gymId           String
+  number          Int
+  description     String? // e.g. "Quarterly membership" or "Cancellation fee"
+  memberId        String
+  membershipId    String?
+  status          InvoiceStatus @default(OPEN)
+  currency        String
+  subtotalMinor   Int
+  taxMinor        Int
+  totalMinor      Int
+  amountPaidMinor Int           @default(0)
+  issuedAt        DateTime      @db.Timestamptz(3)
+  dueDate         DateTime      @db.Date
+  paidAt          DateTime?     @db.Timestamptz(3)
+  deletedAt       DateTime?     @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+
+  gym        Gym         @relation(fields: [gymId], references: [id])
+  member     Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  membership Membership? @relation(fields: [gymId, membershipId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  payments   Payment[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, number])
+  @@index([gymId, status, dueDate])
+  @@index([gymId, memberId])
+}
+
+model Payment {
+  id           String        @id @default(cuid(2))
+  gymId        String
+  memberId     String
+  invoiceId    String?
+  amountMinor  Int
+  currency     String
+  method       PaymentMethod
+  status       PaymentStatus @default(COMPLETED)
+  reference    String?
+  receivedAt   DateTime      @db.Timestamptz(3)
+  recordedById String
+  deletedAt    DateTime?     @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+
+  gym        Gym         @relation(fields: [gymId], references: [id])
+  member     Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  invoice    Invoice?    @relation(fields: [gymId, invoiceId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+  recordedBy StaffMember @relation(fields: [gymId, recordedById], references: [gymId, id])
+  refunds    Refund[]
+
+  @@unique([gymId, id])
+  @@index([gymId, receivedAt])
+  @@index([gymId, memberId])
+}
+
+model Refund {
+  id           String   @id @default(cuid(2))
+  gymId        String
+  paymentId    String
+  amountMinor  Int
+  reason       String
+  refundedAt   DateTime @db.Timestamptz(3)
+  recordedById String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  gym        Gym         @relation(fields: [gymId], references: [id])
+  payment    Payment     @relation(fields: [gymId, paymentId], references: [gymId, id])
+  recordedBy StaffMember @relation(fields: [gymId, recordedById], references: [gymId, id])
+
+  @@index([gymId, paymentId])
+  @@index([gymId, refundedAt])
+}
+
+model CheckIn {
+  id           String        @id @default(cuid(2))
+  gymId        String
+  memberId     String
+  locationId   String
+  method       CheckInMethod
+  result       CheckInResult
+  checkedInAt  DateTime      @default(now()) @db.Timestamptz(3)
+  recordedById String?
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+
+  gym        Gym          @relation(fields: [gymId], references: [id])
+  member     Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  location   Location     @relation(fields: [gymId, locationId], references: [gymId, id])
+  recordedBy StaffMember? @relation(fields: [gymId, recordedById], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([gymId, checkedInAt])
+  @@index([gymId, memberId, checkedInAt])
+}
+
+model Room {
+  id         String   @id @default(cuid(2))
+  gymId      String
+  locationId String
+  name       String
+  capacity   Int
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  gym      Gym            @relation(fields: [gymId], references: [id])
+  location Location       @relation(fields: [gymId, locationId], references: [gymId, id])
+  sessions ClassSession[]
+
+  @@unique([gymId, id])
+  @@unique([locationId, name])
+  @@index([gymId])
+}
+
+model ClassType {
+  id              String   @id @default(cuid(2))
+  gymId           String
+  name            String
+  description     String?
+  color           String
+  durationMinutes Int
+  defaultCapacity Int
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  gym      Gym            @relation(fields: [gymId], references: [id])
+  sessions ClassSession[]
+
+  @@unique([gymId, id])
+  @@unique([gymId, name])
+}
+
+model ClassSession {
+  id          String             @id @default(cuid(2))
+  gymId       String
+  classTypeId String
+  trainerId   String
+  roomId      String
+  startsAt    DateTime           @db.Timestamptz(3)
+  endsAt      DateTime           @db.Timestamptz(3)
+  capacity    Int
+  status      ClassSessionStatus @default(SCHEDULED)
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime           @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  classType ClassType   @relation(fields: [gymId, classTypeId], references: [gymId, id])
+  trainer   StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
+  room      Room        @relation(fields: [gymId, roomId], references: [gymId, id])
+  bookings  Booking[]
+
+  @@unique([gymId, id])
+  @@index([gymId, startsAt])
+  @@index([trainerId, startsAt])
+}
+
+model Booking {
+  id                 String        @id @default(cuid(2))
+  gymId              String
+  sessionId          String
+  memberId           String
+  creditMembershipId String? // class-pack membership whose credit this booking used
+  status             BookingStatus
+  waitlistPosition   Int?
+  bookedAt           DateTime      @default(now()) @db.Timestamptz(3)
+  cancelledAt        DateTime?     @db.Timestamptz(3)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+
+  gym              Gym          @relation(fields: [gymId], references: [id])
+  session          ClassSession @relation(fields: [gymId, sessionId], references: [gymId, id])
+  member           Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  creditMembership Membership?  @relation("BookingCredit", fields: [gymId, creditMembershipId], references: [gymId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([sessionId, memberId])
+  @@index([gymId, sessionId, status])
+  @@index([gymId, memberId])
+}
+
+model Notification {
+  id              String           @id @default(cuid(2))
+  gymId           String
+  recipientUserId String
+  type            NotificationType
+  title           String
+  body            String
+  entityType      String?
+  entityId        String?
+  dedupeKey       String
+  readAt          DateTime?        @db.Timestamptz(3)
+  /// When the push job handled this notification (sent, or skipped by preference / no device).
+  pushedAt        DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  gym        Gym            @relation(fields: [gymId], references: [id])
+  recipient  User           @relation(fields: [recipientUserId], references: [id])
+  deliveries PushDelivery[]
+
+  @@unique([gymId, dedupeKey])
+  @@index([pushedAt, createdAt])
+  @@index([gymId, recipientUserId, readAt])
+}
+
+model FileAsset {
+  id           String   @id @default(cuid(2))
+  gymId        String
+  kind         FileKind
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  uploadedById String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  gym          Gym         @relation(fields: [gymId], references: [id])
+  uploadedBy   StaffMember @relation(fields: [gymId, uploadedById], references: [gymId, id])
+  memberPhotos Member[]
+
+  @@unique([gymId, id])
+  @@index([gymId, kind])
+}
+
+/// Tenant audit trail. Append-only (no UPDATE/DELETE grant + trigger).
+model AuditLog {
+  id               String         @id @default(cuid(2))
+  gymId            String
+  actorUserId      String?
+  actorType        AuditActorType
+  supportSessionId String?
+  action           String
+  entityType       String
+  entityId         String?
+  changes          Json           @default("{}")
+  ip               String?
+  userAgent        String?
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+
+  gym Gym @relation(fields: [gymId], references: [id])
+
+  @@index([gymId, createdAt])
+  @@index([gymId, entityType, entityId])
+}
+
+// ─────────────────────────────── Mobile app ───────────────────────────────
+
+enum MemberAccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MemberInviteChannel {
+  EMAIL
+  SMS
+  CODE
+}
+
+/// Links a global User login to a Member record in one gym (the member's app access there).
+model MemberAccount {
+  id          String              @id @default(cuid(2))
+  gymId       String
+  memberId    String
+  userId      String
+  status      MemberAccountStatus @default(ACTIVE)
+  lastLoginAt DateTime?           @db.Timestamptz(3)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([gymId, id])
+  @@unique([gymId, memberId])
+  @@unique([gymId, userId])
+  @@unique([memberId])
+  @@index([userId])
+}
+
+/// An invitation for a member to use the app: email/SMS link or a short front-desk code.
+/// Only the token's hash is stored; single use; expires.
+model MemberAppInvite {
+  id              String              @id @default(cuid(2))
+  gymId           String
+  memberId        String
+  channel         MemberInviteChannel
+  tokenHash       String              @unique
+  /// The identity the account will be bound to (exactly one is set).
+  email           String?
+  phoneEnc        String?
+  /// Platform-scope blind index of the phone (matches User.phoneBlindIndex).
+  phoneBlindIndex String?
+  expiresAt       DateTime            @db.Timestamptz(3)
+  usedAt          DateTime?           @db.Timestamptz(3)
+  revokedAt       DateTime?           @db.Timestamptz(3)
+  createdById     String
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  member    Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  createdBy StaffMember @relation(fields: [gymId, createdById], references: [gymId, id])
+
+  @@index([gymId, memberId])
+}
+
+/// One-time login codes (email or SMS). Reachable only through SECURITY DEFINER functions.
+model LoginOtp {
+  id             String    @id @default(cuid(2))
+  userId         String
+  identifierHash String
+  codeHash       String
+  attempts       Int       @default(0)
+  expiresAt      DateTime  @db.Timestamptz(3)
+  usedAt         DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([identifierHash, createdAt])
+}
+
+/// A logged-in device. The user can list and revoke these; revoking ends its refresh chain.
+model MobileDeviceSession {
+  id             String    @id @default(cuid(2))
+  userId         String
+  deviceName     String
+  platform       String
+  appVersion     String?
+  ip             String?
+  /// User.sessionVersion when created; a password change or "sign out everywhere" ends the session.
+  sessionVersion Int
+  lastSeenAt     DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt      DateTime? @db.Timestamptz(3)
+  revokeReason   String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(3)
+
+  user          User                 @relation(fields: [userId], references: [id])
+  refreshTokens MobileRefreshToken[]
+  pushTokens    PushToken[]
+
+  @@index([userId, revokedAt])
+}
+
+/// Rotating refresh tokens (hash only). Re-using a used token revokes the whole device session.
+model MobileRefreshToken {
+  id        String    @id @default(cuid(2))
+  sessionId String
+  tokenHash String    @unique
+  usedAt    DateTime? @db.Timestamptz(3)
+  expiresAt DateTime  @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  session MobileDeviceSession @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+}
+
+// ─────────────────────────── Trainer & member fitness (mobile Phase 5) ───────────────────────────
+
+enum WorkoutPlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum TrainingSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+/// A workout plan written by a trainer. Without a member it is a template; assigning a template
+/// copies it into a plan for that member. Notes are encrypted.
+model WorkoutPlan {
+  id        String            @id @default(cuid(2))
+  gymId     String
+  trainerId String
+  memberId  String?
+  title     String
+  notesEnc  String?
+  status    WorkoutPlanStatus @default(DRAFT)
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime          @updatedAt @db.Timestamptz(3)
+
+  gym     Gym              @relation(fields: [gymId], references: [id])
+  trainer StaffMember      @relation(fields: [gymId, trainerId], references: [gymId, id])
+  member  Member?          @relation(fields: [gymId, memberId], references: [gymId, id])
+  days    WorkoutPlanDay[]
+
+  @@unique([gymId, id])
+  @@index([gymId, trainerId])
+  @@index([gymId, memberId, status])
+}
+
+model WorkoutPlanDay {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  planId    String
+  position  Int
+  title     String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym         Gym                 @relation(fields: [gymId], references: [id])
+  plan        WorkoutPlan         @relation(fields: [gymId, planId], references: [gymId, id], onDelete: Cascade)
+  exercises   WorkoutExercise[]
+  completions WorkoutCompletion[]
+
+  @@unique([gymId, id])
+  @@unique([planId, position])
+}
+
+model WorkoutExercise {
+  id          String   @id @default(cuid(2))
+  gymId       String
+  dayId       String
+  position    Int
+  name        String
+  sets        Int?
+  reps        String?
+  restSeconds Int?
+  notes       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  gym Gym            @relation(fields: [gymId], references: [id])
+  day WorkoutPlanDay @relation(fields: [gymId, dayId], references: [gymId, id], onDelete: Cascade)
+
+  @@unique([dayId, position])
+  @@index([gymId])
+}
+
+/// A member marking a plan day as done. The optional note is encrypted.
+model WorkoutCompletion {
+  id          String   @id @default(cuid(2))
+  gymId       String
+  memberId    String
+  dayId       String
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  noteEnc     String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym            @relation(fields: [gymId], references: [id])
+  member Member         @relation(fields: [gymId, memberId], references: [gymId, id])
+  day    WorkoutPlanDay @relation(fields: [gymId, dayId], references: [gymId, id], onDelete: Cascade)
+
+  @@index([gymId, memberId, completedAt])
+  @@index([dayId, completedAt])
+}
+
+/// Weight and body measurements on a day. Every value is encrypted together as one JSON blob.
+model ProgressEntry {
+  id              String   @id @default(cuid(2))
+  gymId           String
+  memberId        String
+  recordedOn      DateTime @db.Date
+  measurementsEnc String
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@unique([memberId, recordedOn])
+  @@index([gymId, memberId, recordedOn])
+}
+
+/// A progress photo. Kept apart from FileAsset (which all staff can read): only the member and
+/// their assigned trainers may see these. The storage key never leaves the server.
+model ProgressPhoto {
+  id         String   @id @default(cuid(2))
+  gymId      String
+  memberId   String
+  takenOn    DateTime @db.Date
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  sha256     String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym    @relation(fields: [gymId], references: [id])
+  member Member @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@index([gymId, memberId, takenOn])
+}
+
+/// A trainer's private note about a client: readable by its author and the gym's managers/owners.
+model TrainerClientNote {
+  id        String   @id @default(cuid(2))
+  gymId     String
+  memberId  String
+  authorId  String
+  bodyEnc   String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  gym    Gym         @relation(fields: [gymId], references: [id])
+  member Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+  author StaffMember @relation(fields: [gymId, authorId], references: [gymId, id])
+
+  @@index([gymId, memberId, createdAt])
+}
+
+/// A personal training appointment between a trainer and a client.
+model TrainingSession {
+  id        String                @id @default(cuid(2))
+  gymId     String
+  trainerId String
+  memberId  String
+  startsAt  DateTime              @db.Timestamptz(3)
+  endsAt    DateTime              @db.Timestamptz(3)
+  status    TrainingSessionStatus @default(SCHEDULED)
+  focus     String?
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime              @updatedAt @db.Timestamptz(3)
+
+  gym     Gym         @relation(fields: [gymId], references: [id])
+  trainer StaffMember @relation(fields: [gymId, trainerId], references: [gymId, id])
+  member  Member      @relation(fields: [gymId, memberId], references: [gymId, id])
+
+  @@index([gymId, trainerId, startsAt])
+  @@index([gymId, memberId, startsAt])
+}
+
+// ─────────────────────────── Push, announcements, account deletion (mobile Phase 6) ───────────────────────────
+
+enum AnnouncementAudience {
+  EVERYONE
+  MEMBERS
+  STAFF
+}
+
+enum DeletionRequestStatus {
+  REQUESTED
+  COMPLETED
+  REJECTED
+}
+
+/// An Expo push token for one signed-in device in one gym. Removed on logout; marked invalid
+/// when Expo reports the device is no longer registered.
+model PushToken {
+  id              String    @id @default(cuid(2))
+  gymId           String
+  userId          String
+  deviceSessionId String
+  token           String
+  platform        String
+  invalidatedAt   DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  gym           Gym                 @relation(fields: [gymId], references: [id])
+  user          User                @relation(fields: [userId], references: [id])
+  deviceSession MobileDeviceSession @relation(fields: [deviceSessionId], references: [id], onDelete: Cascade)
+  deliveries    PushDelivery[]
+
+  @@unique([gymId, deviceSessionId])
+  @@index([gymId, userId])
+  @@index([token])
+}
+
+/// Which push alerts a person wants from one gym. The in-app list always keeps everything.
+model NotificationPreference {
+  id             String   @id @default(cuid(2))
+  gymId          String
+  userId         String
+  classReminders Boolean  @default(true)
+  waitlist       Boolean  @default(true)
+  membership     Boolean  @default(true)
+  payments       Boolean  @default(true)
+  announcements  Boolean  @default(true)
+  staffAlerts    Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  gym  Gym  @relation(fields: [gymId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([gymId, userId])
+}
+
+/// A message from the gym to its members and/or staff. Gym-public text: not encrypted.
+model Announcement {
+  id          String               @id @default(cuid(2))
+  gymId       String
+  title       String
+  body        String
+  audience    AnnouncementAudience
+  createdById String
+  publishedAt DateTime             @default(now()) @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @db.Timestamptz(3)
+
+  gym       Gym         @relation(fields: [gymId], references: [id])
+  createdBy StaffMember @relation(fields: [gymId, createdById], references: [gymId, id])
+
+  @@index([gymId, publishedAt])
+}
+
+/// One push attempt for one notification on one device. Written only by the push job (owner role).
+model PushDelivery {
+  id               String    @id @default(cuid(2))
+  notificationId   String
+  pushTokenId      String
+  ticketId         String?
+  /// SENT (ticket received), DELIVERED (receipt ok) or ERROR.
+  status           String
+  error            String?
+  receiptCheckedAt DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  pushToken    PushToken    @relation(fields: [pushTokenId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, pushTokenId])
+  @@index([status, receiptCheckedAt, createdAt])
+}
+
+/// A member asks the gym to delete their app account and personal data. Staff complete it
+/// (anonymise, disable the account, erase fitness data) or reject it; both are audited.
+model AccountDeletionRequest {
+  id             String                @id @default(cuid(2))
+  gymId          String
+  memberId       String
+  userId         String
+  reasonEnc      String?
+  status         DeletionRequestStatus @default(REQUESTED)
+  resolvedAt     DateTime?             @db.Timestamptz(3)
+  resolvedById   String?
+  resolutionNote String?
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+
+  gym        Gym          @relation(fields: [gymId], references: [id])
+  member     Member       @relation(fields: [gymId, memberId], references: [gymId, id])
+  user       User         @relation(fields: [userId], references: [id])
+  resolvedBy StaffMember? @relation(fields: [gymId, resolvedById], references: [gymId, id])
+
+  @@index([gymId, status, createdAt])
+}

@@ -1,0 +1,7 @@
+# Maestro end-to-end suite for the FitCRM mobile app. See mobile/README.md → "End-to-end tests".
+# Needs: the backend on this PC (npm run dev:lan), a fresh seed (npm run db:seed) and a
+# development build of the app installed on the emulator/phone (appId com.kangagympilot.member.dev).
+flows:
+  - "flows/*.yaml"
+executionOrder:
+  continueOnFailure: true
