@@ -24,11 +24,14 @@
     "jobs:run": "tsx --conditions=react-server scripts/jobs-run.ts",
     "openapi:generate": "tsx scripts/openapi.ts",
     "dev:lan": "next dev -H 0.0.0.0",
-    "jobs:watch": "tsx --conditions=react-server scripts/jobs-run.ts --watch"
+    "jobs:watch": "tsx --conditions=react-server scripts/jobs-run.ts --watch",
+    "live:check": "tsx --conditions=react-server scripts/live-check.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
     "@hookform/resolvers": "^5.9.1",
+    "@livekit/components-react": "^2.9.24",
+    "@livekit/components-styles": "^1.2.0",
     "@next/env": "^16.3.8",
     "@node-rs/argon2": "^2.2.1",
     "@paralleldrive/cuid2": "^3.3.0",
@@ -44,6 +47,8 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "jose": "^6.2.12",
+    "livekit-client": "^2.23.0",
+    "livekit-server-sdk": "^2.19.1",
     "lucide-react": "^1.49.0",
     "next": "^16.3.8",
     "next-auth": "^5.0.0-beta.32",

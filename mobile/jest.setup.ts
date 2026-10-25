@@ -23,3 +23,17 @@ jest.mock("expo-local-authentication", () => ({
   supportedAuthenticationTypesAsync: jest.fn(async () => [1]),
   authenticateAsync: jest.fn(async () => ({ success: true })),
 }));
+
+// LiveKit (video calls): native WebRTC isn't available in Jest. The call screen's pre-join step
+// and the token request are tested; the room itself is a pass-through.
+jest.mock("@livekit/react-native", () => ({
+  registerGlobals: jest.fn(),
+  AudioSession: { startAudioSession: jest.fn(async () => undefined), stopAudioSession: jest.fn(async () => undefined) },
+  LiveKitRoom: ({ children }: { children: unknown }) => children,
+  VideoTrack: () => null,
+  isTrackReference: () => false,
+  useTracks: () => [],
+  useRoomContext: () => ({ disconnect: jest.fn(async () => undefined) }),
+  useLocalParticipant: () => ({ localParticipant: { setMicrophoneEnabled: jest.fn(), setCameraEnabled: jest.fn(), getTrackPublication: () => undefined }, isMicrophoneEnabled: false, isCameraEnabled: false }),
+}));
+jest.mock("livekit-client", () => ({ Track: { Source: { Camera: "camera", Microphone: "microphone", ScreenShare: "screen_share" } } }));

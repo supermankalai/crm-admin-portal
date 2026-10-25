@@ -26,6 +26,7 @@ export const PERMISSIONS = [
   "classes.manageOwn",
   "classes.book",
   "workouts.manage", // workout plans, PT sessions, client progress (own clients; managers: all)
+  "pt.manage", // assign trainers to clients, end assignments, set goals; PT sessions for any trainer
   "staff.view",
   "staff.manage",
   "staff.invite",
@@ -64,6 +65,7 @@ const MANAGER = new Set<Permission>([
   "classes.manageOwn",
   "classes.book",
   "workouts.manage",
+  "pt.manage",
   "staff.view",
   "staff.invite",
   "schedule.view",

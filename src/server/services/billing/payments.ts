@@ -10,6 +10,7 @@ import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import { todayFor } from "../members/shared";
 import { billingRule, mapRefundGuard } from "./shared";
+import { cancelPurchaseOfInvoice } from "../pt/packages";
 
 /** Record a payment against an open invoice. The invoice row is locked, so concurrent payments can't overpay. */
 export async function recordPayment(
@@ -71,7 +72,7 @@ export async function refundPayment(
       if (!locked.length) throw new NotFoundError("Payment not found.");
       const payment = await tx.payment.findUniqueOrThrow({
         where: { id: input.paymentId },
-        include: { refunds: { select: { amountMinor: true } }, invoice: { select: { membershipId: true } } },
+        include: { refunds: { select: { amountMinor: true } }, invoice: { select: { id: true, membershipId: true } } },
       });
       const refunded = payment.refunds.reduce((s, r) => s + r.amountMinor, 0);
       const outcome = billingRule(() => validateRefund(payment, refunded, input.amount));
@@ -98,15 +99,17 @@ export async function refundPayment(
           cancelledMembershipId = m.id;
         }
       }
-      await recordAudit(tx, ctx, { action: "payment.refund", entityType: "Payment", entityId: payment.id, changes: { refundId: refund.id, amountMinor: input.amount, status: outcome.status, cancelledMembershipId } }, meta);
-      return { refundId: refund.id, ...outcome, cancelledMembershipId };
+      // A refunded PT package is cancelled the same way ("cancel what it paid for").
+      const cancelledPackage = input.cancelMembership && payment.invoice ? await cancelPurchaseOfInvoice(tx, ctx, payment.invoice.id, `Refunded: ${input.reason}`, meta) : null;
+      await recordAudit(tx, ctx, { action: "payment.refund", entityType: "Payment", entityId: payment.id, changes: { refundId: refund.id, amountMinor: input.amount, status: outcome.status, cancelledMembershipId, cancelledPtPackageId: cancelledPackage?.purchaseId ?? null } }, meta);
+      return { refundId: refund.id, ...outcome, cancelledMembershipId, cancelledPtPackageId: cancelledPackage?.purchaseId ?? null };
     });
   } catch (error) {
     mapRefundGuard(error);
   }
 }
 
-/** Void an unpaid invoice (e.g. sold by mistake). The unpaid membership it created is cancelled with it. */
+/** Void an unpaid invoice (e.g. sold by mistake). The unpaid membership or PT package it created is cancelled with it. */
 export async function voidInvoice(ctx: TenantContext, invoiceId: string, reason: string, meta: RequestMeta) {
   assertCan(ctx, "payments.refund");
   return inTenant(ctx, async (tx) => {
@@ -123,7 +126,8 @@ export async function voidInvoice(ctx: TenantContext, invoiceId: string, reason:
         select: { id: true },
       });
     }
-    await recordAudit(tx, ctx, { action: "invoice.void", entityType: "Invoice", entityId: invoiceId, changes: { reason, cancelledMembership: isMembershipSale ? invoice.membershipId : null } }, meta);
+    const cancelledPackage = await cancelPurchaseOfInvoice(tx, ctx, invoiceId, `Invoice voided: ${reason}`, meta);
+    await recordAudit(tx, ctx, { action: "invoice.void", entityType: "Invoice", entityId: invoiceId, changes: { reason, cancelledMembership: isMembershipSale ? invoice.membershipId : null, cancelledPtPackage: cancelledPackage?.purchaseId ?? null } }, meta);
   });
 }
 

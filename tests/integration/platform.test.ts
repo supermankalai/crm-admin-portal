@@ -132,7 +132,7 @@ describe("platform analytics are aggregate-only and admin-only", () => {
     ).resolves.toMatchObject({ count: 0 });
     const updated = await updatePlan(
       w.users.superAdmin.id,
-      { code: "TEST", name: "Test", description: "", priceMonthlyMinor: 0, maxMembers: 20, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, featureMobileApp: true, featureMemberApp: true, isActive: true },
+      { code: "TEST", name: "Test", description: "", priceMonthlyMinor: 0, maxMembers: 20, maxStaff: 5, maxLocations: 1, featureReports: true, featureCsvExport: true, featureClassBookings: true, featureMobileApp: true, featureMemberApp: true, featureLiveSessions: true, isActive: true },
       meta
     );
     expect(updated.maxMembers).toBe(20);

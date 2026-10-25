@@ -1,7 +1,7 @@
 /** Platform plan limits and feature flags. Enforced on the server (and limits again in the DB). */
 
 export type LimitKind = "members" | "staff" | "locations";
-export type FeatureKey = "reports" | "csvExport" | "classBookings" | "mobileApp" | "memberApp";
+export type FeatureKey = "reports" | "csvExport" | "classBookings" | "mobileApp" | "memberApp" | "liveSessions";
 
 export type PlanLimits = {
   name: string;
@@ -23,6 +23,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   classBookings: "Class bookings",
   mobileApp: "Staff mobile app",
   memberApp: "Member app",
+  liveSessions: "Live video sessions",
 };
 
 export function limitFor(plan: PlanLimits, kind: LimitKind): number {

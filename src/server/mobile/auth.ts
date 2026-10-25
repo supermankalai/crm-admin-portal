@@ -13,6 +13,7 @@ import { AppError, FeatureNotInPlanError, NotFoundError, UnauthenticatedError, V
 import { logger } from "@/server/logger";
 import { enforce, hashIdentifier, RATE_LIMITS, RateLimitError, reset } from "@/server/security/rate-limit";
 import type { RequestMeta } from "@/server/security/request-meta";
+import { liveSessionsAvailable } from "@/server/services/live/join";
 import { getSmsProvider, maskPhone } from "@/server/sms";
 import { resolveMemberContext, type MemberContext } from "@/server/tenant/member";
 import { resolveTenant } from "@/server/tenant/resolve";
@@ -390,6 +391,7 @@ export function currentGymOf(ctx: TenantContext | MemberContext): CurrentGym {
     role: isMember ? "MEMBER" : (ctx as TenantContext).role,
     permissions: isMember ? [] : [...(ctx as TenantContext).permissions],
     access: { writable: ctx.access.writable, reason: ctx.access.reason, isTrial: ctx.access.isTrial, endsAt: ctx.access.endsAt?.toISOString() ?? null },
+    liveSessions: liveSessionsAvailable(ctx),
   };
 }
 

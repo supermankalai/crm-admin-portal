@@ -28,6 +28,7 @@ export const planUpdateSchema = z.object({
   featureClassBookings: z.boolean(),
   featureMobileApp: z.boolean(),
   featureMemberApp: z.boolean(),
+  featureLiveSessions: z.boolean(),
   isActive: z.boolean(),
 });
 export type PlanUpdateInput = z.infer<typeof planUpdateSchema>;

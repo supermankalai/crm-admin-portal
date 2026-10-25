@@ -44,9 +44,10 @@ export const updateStaffProfileAction = gymAction({ permission: "schedule.view",
   return { saved: true };
 });
 
-export const assignClientAction = gymAction({ permission: "staff.invite", schema: clientAssignmentSchema.extend({ assign: z.boolean() }), write: true }, async (ctx, input) => {
+export const assignClientAction = gymAction({ permission: "pt.manage", schema: clientAssignmentSchema.extend({ assign: z.boolean() }), write: true }, async (ctx, input) => {
   await assignClient(ctx, input.staffId, input.memberId, input.assign, await getRequestMeta());
   refresh(ctx.gym.slug, input.staffId);
+  revalidatePath(`/g/${ctx.gym.slug}/pt`, "layout");
   return { assigned: input.assign };
 });
 

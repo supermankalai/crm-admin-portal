@@ -141,22 +141,23 @@ export function ClientControls({ gymSlug, staffId }: { gymSlug: string; staffId:
     <div className="grid gap-2">
       <Label htmlFor="member-picker">Assign a client</Label>
       <MemberPicker gymSlug={gymSlug} value={member} onChange={setMember} />
-      {member && (
-        <Button
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              const r = await assignClientAction(gymSlug, { staffId, memberId: member.id, assign: true });
-              if (!r.ok) return void toast.error(r.error);
-              toast.success(`${member.name} assigned.`);
-              setMember(null);
-              router.refresh();
-            })
-          }
-        >
-          <Plus aria-hidden /> Assign
-        </Button>
-      )}
+      <p className="text-xs text-muted-foreground">Search for a member, pick them, then Assign. The trainer can then see their progress and give them workout plans.</p>
+      <Button
+        className="justify-self-start"
+        disabled={pending || !member}
+        onClick={() =>
+          member &&
+          startTransition(async () => {
+            const r = await assignClientAction(gymSlug, { staffId, memberId: member.id, assign: true });
+            if (!r.ok) return void toast.error(r.error);
+            toast.success(`${member.name} assigned.`);
+            setMember(null);
+            router.refresh();
+          })
+        }
+      >
+        <Plus aria-hidden /> Assign
+      </Button>
     </div>
   );
 }

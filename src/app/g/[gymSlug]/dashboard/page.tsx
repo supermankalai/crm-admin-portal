@@ -139,7 +139,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ gymS
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{c.classType.name}</span>
                         <span className="block text-xs text-muted-foreground">
-                          {time.format(c.startsAt)} · {c.room.name} · {c.trainer.user.name}
+                          {time.format(c.startsAt)} · {c.room?.name ?? "Online"} · {c.trainer.user.name}
                         </span>
                       </span>
                       <Badge variant={full ? "warning" : "secondary"} className="tabular-nums">

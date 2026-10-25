@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,15 +21,17 @@ type Setup = {
   trainers: { id: string; name: string }[];
 };
 
-export function SessionForm({ gymSlug, setup, today }: { gymSlug: string; setup: Setup; today: string }) {
+/** `canScheduleOnline`: the plan includes live sessions, so classes can be online or hybrid. */
+export function SessionForm({ gymSlug, setup, today, canScheduleOnline = false }: { gymSlug: string; setup: Setup; today: string; canScheduleOnline?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const first = setup.classTypes[0];
   const form = useForm<z.input<typeof sessionSchema>, unknown, z.output<typeof sessionSchema>>({
     resolver: zodResolver(sessionSchema),
-    defaultValues: { classTypeId: first?.id ?? "", trainerId: setup.trainers[0]?.id ?? "", roomId: setup.rooms[0]?.id ?? "", date: today, startTime: "18:00", durationMinutes: first?.durationMinutes ?? 60, capacity: first?.defaultCapacity ?? 15, repeatWeeks: 1 },
+    defaultValues: { classTypeId: first?.id ?? "", trainerId: setup.trainers[0]?.id ?? "", deliveryMode: "IN_PERSON", roomId: setup.rooms[0]?.id ?? "", date: today, startTime: "18:00", durationMinutes: first?.durationMinutes ?? 60, capacity: first?.defaultCapacity ?? 15, repeatWeeks: 1 },
   });
   const e = form.formState.errors;
+  const online = useWatch({ control: form.control, name: "deliveryMode" }) === "ONLINE";
   const msg = (m?: string) => (m ? <p className="text-sm text-destructive">{m}</p> : null);
 
   return (
@@ -81,17 +83,30 @@ export function SessionForm({ gymSlug, setup, today }: { gymSlug: string; setup:
               ))}
             </NativeSelect>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="roomId">Room</Label>
-            <NativeSelect id="roomId" {...form.register("roomId")}>
-              {setup.rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.location.name} · {r.name} (max {r.capacity})
-                </option>
-              ))}
-            </NativeSelect>
-            {msg(e.roomId?.message)}
-          </div>
+          {canScheduleOnline && (
+            <div className="grid gap-2">
+              <Label htmlFor="deliveryMode">Where</Label>
+              <NativeSelect id="deliveryMode" {...form.register("deliveryMode")}>
+                <option value="IN_PERSON">In the room</option>
+                <option value="ONLINE">Online only (live video)</option>
+                <option value="HYBRID">Hybrid (in the room and online)</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">Booked members join online from the app; the trainer hosts the call.</p>
+            </div>
+          )}
+          {!online && (
+            <div className="grid gap-2">
+              <Label htmlFor="roomId">Room</Label>
+              <NativeSelect id="roomId" {...form.register("roomId")}>
+                {setup.rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.location.name} · {r.name} (max {r.capacity})
+                  </option>
+                ))}
+              </NativeSelect>
+              {msg(e.roomId?.message)}
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="capacity">Capacity</Label>
             <Input id="capacity" type="number" min={1} {...form.register("capacity")} aria-invalid={!!e.capacity} />

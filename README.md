@@ -78,6 +78,7 @@ All variables are validated with Zod at startup ([src/server/env.ts](src/server/
 | `MOBILE_SECRET` | ✓ | 32 random bytes (base64). Separate keys are derived from it for mobile access tokens, one-time codes, QR codes and signed file URLs. |
 | `SMS_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | — | `dev-outbox` (default) or `twilio`; the Twilio values are required when `twilio` is chosen |
 | `PUSH_PROVIDER`, `EXPO_ACCESS_TOKEN` | — | `dev-outbox` (default: pushes are written to `.dev-outbox/*.push.json`) or `expo` (real phones). The token is needed only if your Expo project has enhanced push security on |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | — | Live sessions (online PT, live classes) on a LiveKit server: all three or none. The URL must be `wss://` (`ws://` only on localhost). Check them with `npm run live:check`. See [docs/LIVE_SESSIONS.md](docs/LIVE_SESSIONS.md). |
 | `TRUSTED_PROXY_HOPS` | — | How many reverse proxies in front of the app append to `X-Forwarded-For` (default `1`). The client IP is read that many entries from the right; anything further left is client-supplied and ignored. |
 
 `.env` is gitignored. [.env.example](.env.example) lists every variable with placeholder values only.
@@ -586,7 +587,8 @@ Before going live:
 - Run behind a reverse proxy that terminates TLS and **appends** the client address to `X-Forwarded-For`. Set `TRUSTED_PROXY_HOPS` to the number of proxies, and `APP_URL` to the `https://` address.
 - Keep `ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` and `AUTH_SECRET` in a secrets manager (or a KMS), never in the repository or next to backups. Rotate keys with `npm run crypto:rotate`.
 - Schedule `npm run jobs:run` every few minutes. It expires subscriptions, cleans up rate-limit buckets, generates alerts and reminders, and sends push alerts.
-- For push, set `PUSH_PROVIDER=expo`, and build the app with `EAS_PROJECT_ID` set (Phase 7).
+- For push, set `PUSH_PROVIDER=live`. Android phones on Firebase also need `FIREBASE_SERVICE_ACCOUNT_FILE` (see mobile/README.md); iPhones need the app built with `EAS_PROJECT_ID` set (Phase 7).
+- For live sessions, set the `LIVEKIT_*` values, point the LiveKit server's webhook at `{APP_URL}/api/livekit/webhook`, make sure it offers TURN on port 443, and run `npm run live:check`. Turn on **Live video sessions** in the plans that include it.
 - Schedule backups and test restores (§8).
 - Ship logs to a central store and alert on `error` entries.
 - Point `STORAGE_DIR` at durable, backed-up storage, or implement the `StorageProvider` interface for S3 or GCS.

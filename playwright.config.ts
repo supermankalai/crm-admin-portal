@@ -38,6 +38,10 @@ export default defineConfig({
       RATE_LIMIT_SIGNUP_PER_IP: "100",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       MIGRATION_DATABASE_URL: process.env.TEST_MIGRATION_DATABASE_URL ?? "",
+      // Never the real LiveKit server: join tokens are issued, but nothing connects.
+      LIVEKIT_URL: "wss://livekit.test",
+      LIVEKIT_API_KEY: "APItestkey",
+      LIVEKIT_API_SECRET: "test-secret-for-live-sessions-0001",
     },
   },
 });

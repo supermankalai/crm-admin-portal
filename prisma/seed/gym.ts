@@ -458,7 +458,7 @@ export async function seedGym(
       const key = `${trainer.id}:${m.id}`;
       if (assigned.has(key)) continue;
       assigned.add(key);
-      trainerClients.push({ gymId, trainerId: trainer.id, memberId: m.id, createdAt: at(Math.max(m.joined, -120), 11) });
+      trainerClients.push({ gymId, trainerId: trainer.id, memberId: m.id, startedOn: dateOnly(Math.max(m.joined, -120)), createdAt: at(Math.max(m.joined, -120), 11) });
     }
   }
   await insertMany("trainer clients", trainerClients, (chunk) => db.trainerClient.createMany({ data: chunk }));

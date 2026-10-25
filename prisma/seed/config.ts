@@ -37,6 +37,7 @@ export const PLATFORM_PLANS = [
     featureClassBookings: true,
     featureMobileApp: false,
     featureMemberApp: false,
+    featureLiveSessions: false,
     sortOrder: 1,
   },
   {
@@ -52,6 +53,7 @@ export const PLATFORM_PLANS = [
     featureClassBookings: true,
     featureMobileApp: true,
     featureMemberApp: true,
+    featureLiveSessions: false,
     sortOrder: 2,
   },
   {
@@ -67,6 +69,7 @@ export const PLATFORM_PLANS = [
     featureClassBookings: true,
     featureMobileApp: true,
     featureMemberApp: true,
+    featureLiveSessions: true,
     sortOrder: 3,
   },
 ] as const;

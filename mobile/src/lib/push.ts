@@ -4,6 +4,7 @@ import type * as NotificationsModule from "expo-notifications";
 import { Platform } from "react-native";
 import { log } from "./log";
 import { api } from "./session";
+import { parseLiveLink, type LiveLink } from "./live";
 
 /**
  * Push alerts. The server decides what to send (and only ever sends generic text — details are in
@@ -124,6 +125,12 @@ export async function dismissDeliveredAlerts() {
 export function gymOfResponse(response: NotificationResponse | null): string | null {
   const data = response?.notification.request.content.data as { gymSlug?: unknown } | undefined;
   return typeof data?.gymSlug === "string" ? data.gymSlug : null;
+}
+
+/** The call a tapped "starts soon" alert points at, if any. */
+export function liveOfResponse(response: NotificationResponse | null): LiveLink | null {
+  const data = response?.notification.request.content.data as { live?: unknown } | undefined;
+  return parseLiveLink(data?.live);
 }
 
 const handled = new Set<string>();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { JoinLiveButton } from "@/components/live-join";
 import { StatusChip } from "@/components/status-chip";
 import { Banner, Button, Card, EmptyState, FormError, ListRow } from "@/components/ui";
 import { useOnline } from "@/hooks/use-online";
@@ -82,7 +83,7 @@ function StaffClassDetail() {
           {dayLabel(c.startsAt, tz)} · {time(c.startsAt, tz)}–{time(c.endsAt, tz)}
         </Text>
         <Text className="text-base text-zinc-700 dark:text-zinc-300">
-          {c.trainer} · {c.room}, {c.location}
+          {c.trainer} · {c.room === "Online" ? "Online" : `${c.room}, ${c.location}`}
         </Text>
         <Text className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{bookingText(c)}</Text>
         {c.status === "CANCELLED" ? <StatusChip label="Cancelled" tone="zinc" /> : null}
@@ -164,7 +165,7 @@ function MemberClassDetail() {
         </View>
         <Text className="text-base text-zinc-700 dark:text-zinc-300">With {c.trainer}</Text>
         <Text className="text-base text-zinc-700 dark:text-zinc-300">
-          {c.room}, {c.location}
+          {c.deliveryMode === "ONLINE" ? "Online (live video in the app)" : c.deliveryMode === "HYBRID" ? `${c.room}, ${c.location} · or join online` : `${c.room}, ${c.location}`}
         </Text>
         <Text className="text-base text-zinc-700 dark:text-zinc-300">
           {spotsText(c)}
@@ -188,6 +189,9 @@ function MemberClassDetail() {
       <FormError message={error ? errorMessage(error) : null} />
       {!online ? <FormError message="You're offline. Booking and cancelling need a connection." /> : null}
 
+      {c.status === "SCHEDULED" && (c.my?.status === "BOOKED" || c.my?.status === "ATTENDED") ? (
+        <JoinLiveButton link={{ kind: "class", sessionId: c.id }} mode={c.deliveryMode} startsAt={c.startsAt} endsAt={c.endsAt} timeZone={tz} label="Join the online class" />
+      ) : null}
       {c.canBook ? <Button label={full ? "Join the waitlist" : "Book this class"} icon={full ? "time-outline" : "checkmark-circle-outline"} onPress={doBook} loading={book.isPending} disabled={!online || busy} /> : null}
       {c.my && c.canCancel ? <Button label={c.my.status === "WAITLISTED" ? "Leave the waitlist" : "Cancel booking"} variant="danger" onPress={doCancel} loading={cancel.isPending} disabled={!online || busy} /> : null}
       {c.my?.status === "BOOKED" && !c.canCancel && new Date(c.startsAt).getTime() > openedAt ? (

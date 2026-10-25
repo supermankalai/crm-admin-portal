@@ -15,6 +15,7 @@ import type { RequestMeta } from "@/server/security/request-meta";
 import { assertCan, inTenant } from "@/server/tenant/guards";
 import type { TenantContext } from "@/server/tenant/types";
 import { todayFor } from "./members/shared";
+import { assignTrainer, endAllForTrainer, endAssignmentFor } from "./pt/assignments";
 
 function staffRule<T>(fn: () => T): T {
   try {
@@ -173,26 +174,17 @@ export async function removeStaff(ctx: TenantContext, staffId: string, meta: Req
     staffRule(() => assertCanRemove(ctx.role, { role: target.role, isSelf: target.id === ctx.staffId }, owners));
     const futureClasses = await tx.classSession.count({ where: { trainerId: target.id, status: "SCHEDULED", startsAt: { gte: new Date() } } });
     await tx.staffMember.update({ where: { id: target.id }, data: { status: "REMOVED", removedAt: new Date() }, select: { id: true } });
-    await tx.trainerClient.deleteMany({ where: { trainerId: target.id } });
-    await recordAudit(tx, ctx, { action: "staff.remove", entityType: "StaffMember", entityId: target.id, changes: { role: target.role, futureClassesToReassign: futureClasses } }, meta);
+    // Their PT clients move to history (and are told); after the status change, so the leaver isn't.
+    const endedClients = await endAllForTrainer(tx, ctx, target.id);
+    await recordAudit(tx, ctx, { action: "staff.remove", entityType: "StaffMember", entityId: target.id, changes: { role: target.role, futureClassesToReassign: futureClasses, endedPtClients: endedClients } }, meta);
     return { futureClasses };
   });
 }
 
+/** The staff profile's client list. Same rules, history and alerts as the PT module. */
 export async function assignClient(ctx: TenantContext, staffId: string, memberId: string, assign: boolean, meta: RequestMeta) {
-  assertCan(ctx, "staff.invite");
-  return inTenant(ctx, async (tx) => {
-    const trainer = await tx.staffMember.findFirst({ where: { id: staffId, status: "ACTIVE", role: "TRAINER" }, select: { id: true } });
-    if (!trainer) throw new ValidationError("Clients can only be assigned to active trainers.");
-    const member = await tx.member.findFirst({ where: { id: memberId, deletedAt: null }, select: { id: true } });
-    if (!member) throw new NotFoundError("Member not found.");
-    if (assign) {
-      await tx.trainerClient.upsert({ where: { trainerId_memberId: { trainerId: staffId, memberId } }, create: { gymId: ctx.gym.id, trainerId: staffId, memberId }, update: {}, select: { id: true } });
-    } else {
-      await tx.trainerClient.deleteMany({ where: { trainerId: staffId, memberId } });
-    }
-    await recordAudit(tx, ctx, { action: assign ? "trainer.client_assign" : "trainer.client_unassign", entityType: "StaffMember", entityId: staffId, changes: { memberId } }, meta);
-  });
+  if (assign) await assignTrainer(ctx, { trainerId: staffId, memberId, goal: null, targets: null }, meta);
+  else await endAssignmentFor(ctx, staffId, memberId, meta);
 }
 
 export async function addShift(ctx: TenantContext, input: { staffId: string; locationId: string; date: string; start: string; end: string }, meta: RequestMeta) {
@@ -287,15 +279,21 @@ export async function mySchedule(ctx: TenantContext, monday: string) {
   const tz = ctx.gym.timezone;
   const from = dayBounds(monday, tz).start;
   const to = dayBounds(addDays(monday, 6), tz).end;
-  if (!ctx.staffId) return { shifts: [], classes: [] };
+  if (!ctx.staffId) return { shifts: [], classes: [], pts: [] };
   const staffId = ctx.staffId;
   return inTenant(ctx, async (tx) => {
     const shifts = await tx.staffShift.findMany({ where: { staffId, startsAt: { gte: from, lt: to } }, orderBy: { startsAt: "asc" }, select: { id: true, startsAt: true, endsAt: true, location: { select: { name: true } } } });
     const classes = await tx.classSession.findMany({
       where: { trainerId: staffId, startsAt: { gte: from, lt: to } },
       orderBy: { startsAt: "asc" },
-      select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, _count: { select: { bookings: { where: { status: { in: ["BOOKED", "ATTENDED"] } } } } } },
+      select: { id: true, startsAt: true, endsAt: true, status: true, capacity: true, deliveryMode: true, classType: { select: { name: true, color: true } }, room: { select: { name: true } }, _count: { select: { bookings: { where: { status: { in: ["BOOKED", "ATTENDED"] } } } } } },
     });
-    return { shifts, classes };
+    // Personal training too, so online sessions have their Join button here.
+    const pts = await tx.trainingSession.findMany({
+      where: { trainerId: staffId, startsAt: { gte: from, lt: to }, status: { not: "CANCELLED" } },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, startsAt: true, endsAt: true, status: true, focus: true, deliveryMode: true, member: { select: { firstName: true, lastName: true } } },
+    });
+    return { shifts, classes, pts };
   });
 }

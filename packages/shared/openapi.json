@@ -2568,6 +2568,9 @@
                                 "endsAt"
                               ],
                               "additionalProperties": false
+                            },
+                            "liveSessions": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -3025,6 +3028,9 @@
                             "endsAt"
                           ],
                           "additionalProperties": false
+                        },
+                        "liveSessions": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -5625,6 +5631,9 @@
                         },
                         "staffAlerts": {
                           "type": "boolean"
+                        },
+                        "training": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -5633,7 +5642,8 @@
                         "membership",
                         "payments",
                         "announcements",
-                        "staffAlerts"
+                        "staffAlerts",
+                        "training"
                       ],
                       "additionalProperties": false
                     },
@@ -5647,7 +5657,8 @@
                           "membership",
                           "payments",
                           "announcements",
-                          "staffAlerts"
+                          "staffAlerts",
+                          "training"
                         ]
                       }
                     }
@@ -6060,6 +6071,9 @@
                   },
                   "staffAlerts": {
                     "type": "boolean"
+                  },
+                  "training": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -6095,6 +6109,9 @@
                         },
                         "staffAlerts": {
                           "type": "boolean"
+                        },
+                        "training": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -6103,7 +6120,8 @@
                         "membership",
                         "payments",
                         "announcements",
-                        "staffAlerts"
+                        "staffAlerts",
+                        "training"
                       ],
                       "additionalProperties": false
                     },
@@ -6117,7 +6135,8 @@
                           "membership",
                           "payments",
                           "announcements",
-                          "staffAlerts"
+                          "staffAlerts",
+                          "training"
                         ]
                       }
                     }
@@ -6498,7 +6517,7 @@
     "/api/mobile/v1/me/push-token": {
       "post": {
         "operationId": "registerPushToken",
-        "summary": "Register this device's Expo push token for the selected gym",
+        "summary": "Register this device's push token (Expo, or Firebase on Android) for the selected gym",
         "tags": [
           "Me"
         ],
@@ -6517,13 +6536,21 @@
                 "properties": {
                   "token": {
                     "type": "string",
-                    "pattern": "^Expo(nent)?PushToken\\[[A-Za-z0-9_-]{10,}\\]$"
+                    "maxLength": 4096
                   },
                   "platform": {
                     "type": "string",
                     "enum": [
                       "ios",
                       "android"
+                    ]
+                  },
+                  "provider": {
+                    "default": "expo",
+                    "type": "string",
+                    "enum": [
+                      "expo",
+                      "fcm"
                     ]
                   }
                 },
@@ -7383,7 +7410,16 @@
                               "PAYMENT_DUE",
                               "ANNOUNCEMENT",
                               "CLASS_FULL",
-                              "DELETION_REQUEST"
+                              "DELETION_REQUEST",
+                              "PT_ASSIGNED",
+                              "PT_ENDED",
+                              "PT_SESSION_BOOKED",
+                              "PT_SESSION_CANCELLED",
+                              "PT_SESSION_REMINDER",
+                              "PT_CREDITS_LOW",
+                              "PT_PACKAGE_EXPIRING",
+                              "LIVE_CLASS_STARTING",
+                              "LIVE_PT_STARTING"
                             ]
                           },
                           "title": {
@@ -7404,6 +7440,33 @@
                                   "alerts",
                                   "members"
                                 ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "live": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "class",
+                                      "pt"
+                                    ]
+                                  },
+                                  "sessionId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "sessionId"
+                                ],
+                                "additionalProperties": false
                               },
                               {
                                 "type": "null"
@@ -7434,6 +7497,7 @@
                           "title",
                           "body",
                           "target",
+                          "live",
                           "readAt",
                           "createdAt"
                         ],
@@ -9158,6 +9222,9 @@
                         "endsAt"
                       ],
                       "additionalProperties": false
+                    },
+                    "liveSessions": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -10989,6 +11056,14 @@
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
+                          },
                           "spotsLeft": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -11062,6 +11137,7 @@
                           "capacity",
                           "booked",
                           "waitlisted",
+                          "deliveryMode",
                           "spotsLeft",
                           "my",
                           "canBook",
@@ -19017,6 +19093,14 @@
                               "name"
                             ],
                             "additionalProperties": false
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
                           }
                         },
                         "required": [
@@ -19026,7 +19110,8 @@
                           "status",
                           "focus",
                           "trainer",
-                          "member"
+                          "member",
+                          "deliveryMode"
                         ],
                         "additionalProperties": false
                       }
@@ -26098,6 +26183,14 @@
                               },
                               "status": {
                                 "type": "string"
+                              },
+                              "deliveryMode": {
+                                "type": "string",
+                                "enum": [
+                                  "IN_PERSON",
+                                  "ONLINE",
+                                  "HYBRID"
+                                ]
                               }
                             },
                             "required": [
@@ -26110,7 +26203,8 @@
                               "room",
                               "booked",
                               "capacity",
-                              "status"
+                              "status",
+                              "deliveryMode"
                             ],
                             "additionalProperties": false
                           },
@@ -26158,6 +26252,14 @@
                               },
                               "status": {
                                 "type": "string"
+                              },
+                              "deliveryMode": {
+                                "type": "string",
+                                "enum": [
+                                  "IN_PERSON",
+                                  "ONLINE",
+                                  "HYBRID"
+                                ]
                               }
                             },
                             "required": [
@@ -26167,7 +26269,8 @@
                               "endsAt",
                               "member",
                               "focus",
-                              "status"
+                              "status",
+                              "deliveryMode"
                             ],
                             "additionalProperties": false
                           },
@@ -27865,6 +27968,14 @@
                               "name"
                             ],
                             "additionalProperties": false
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "IN_PERSON",
+                              "ONLINE",
+                              "HYBRID"
+                            ]
                           }
                         },
                         "required": [
@@ -27874,7 +27985,8 @@
                           "status",
                           "focus",
                           "trainer",
-                          "member"
+                          "member",
+                          "deliveryMode"
                         ],
                         "additionalProperties": false
                       }
@@ -31175,6 +31287,14 @@
                   "focus": {
                     "type": "string",
                     "maxLength": 120
+                  },
+                  "deliveryMode": {
+                    "default": "IN_PERSON",
+                    "type": "string",
+                    "enum": [
+                      "IN_PERSON",
+                      "ONLINE"
+                    ]
                   }
                 },
                 "required": [
@@ -32462,6 +32582,494 @@
           }
         },
         "x-auth": "staff"
+      }
+    },
+    "/api/mobile/v1/live/{kind}/{sessionId}/token": {
+      "post": {
+        "operationId": "liveJoin",
+        "summary": "Get a LiveKit token to join an online class or PT session (opens 10 minutes before the start)",
+        "tags": [
+          "Live"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "roomName": {
+                      "type": "string"
+                    },
+                    "identity": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "host",
+                        "coach",
+                        "member"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "class",
+                            "pt"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "startsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "endsAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        "deliveryMode": {
+                          "type": "string",
+                          "enum": [
+                            "IN_PERSON",
+                            "ONLINE",
+                            "HYBRID"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id",
+                        "title",
+                        "startsAt",
+                        "endsAt",
+                        "deliveryMode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "token",
+                    "roomName",
+                    "identity",
+                    "role",
+                    "expiresAt",
+                    "session"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid or expired access token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Not included in the gym's plan, or a plan limit was reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed for your role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (also for other gyms' data)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict, or the gym is read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (see fieldErrors)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many attempts (see Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "fieldErrors": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "x-auth": "gym"
       }
     }
   }

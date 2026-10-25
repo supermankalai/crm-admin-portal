@@ -17,7 +17,7 @@ export function planLimitsOf(ctx: TenantContext): PlanLimits {
   const plan = ctx.plan;
   return plan
     ? { name: plan.name, maxMembers: plan.maxMembers, maxStaff: plan.maxStaff, maxLocations: plan.maxLocations, features: plan.features }
-    : { name: "current", maxMembers: 0, maxStaff: 0, maxLocations: 0, features: { reports: false, csvExport: false, classBookings: false, mobileApp: false, memberApp: false } };
+    : { name: "current", maxMembers: 0, maxStaff: 0, maxLocations: 0, features: { reports: false, csvExport: false, classBookings: false, mobileApp: false, memberApp: false, liveSessions: false } };
 }
 
 export function hasFeature(ctx: TenantContext, feature: FeatureKey): boolean {

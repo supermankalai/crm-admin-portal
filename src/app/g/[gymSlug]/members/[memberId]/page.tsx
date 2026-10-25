@@ -22,6 +22,10 @@ import { NotFoundError } from "@/server/errors";
 import { getMemberProfile } from "@/server/services/members/profile";
 import { hasPermission, requireGymAccess } from "@/server/tenant";
 import { memberAppStatus } from "@/server/services/member-app-invites";
+import { listTrainers } from "@/server/services/pt/clients";
+import { listPackages, memberPackages } from "@/server/services/pt/packages";
+import { SellPackageDialog } from "../../pt/package-forms";
+import { MemberPackagesList } from "../../pt/pt-shared";
 import { MemberActions } from "./member-actions";
 import { MemberAppCard } from "./member-app-card";
 import { MembershipActions } from "./membership-actions";
@@ -73,6 +77,14 @@ export default async function MemberProfilePage({
   const current = profile.memberships.find((m) => m.state === "active" || m.state === "frozen");
   const tz = ctx.gym.timezone;
   const app = ctx.plan?.features.memberApp ? await memberAppStatus(ctx, member.id) : null;
+  // PT packages: for whoever sells them (front desk too) or coaches.
+  const canSellPt = writable && hasPermission(ctx, "payments.record");
+  const showPt = hasPermission(ctx, "payments.record") || hasPermission(ctx, "workouts.manage");
+  const [ptPackages, ptCatalog, ptTrainers] = await Promise.all([
+    showPt ? memberPackages(ctx, member.id) : Promise.resolve(null),
+    canSellPt ? listPackages(ctx, { activeOnly: true }) : Promise.resolve([]),
+    canSellPt ? listTrainers(ctx) : Promise.resolve([]),
+  ]);
 
   return (
     <>
@@ -181,7 +193,14 @@ export default async function MemberProfilePage({
                   <MemberQr code={member.checkInCode} label={`Check-in QR code for ${name}`} />
                   <Detail label="Visits (last 30 days)">{profile.visits.last30Days}</Detail>
                   <Detail label="Visits (all time)">{profile.visits.total}</Detail>
-                  <Detail label="Trainer">{profile.trainers.map((t) => t.name).join(", ")}</Detail>
+                  <Detail label="Trainer">
+                    {profile.trainers.length ? profile.trainers.map((t) => t.name).join(", ") : "None"}
+                    {hasPermission(ctx, "workouts.manage") && (profile.trainers.length > 0 || hasPermission(ctx, "pt.manage")) && (
+                      <Link href={`/g/${gymSlug}/pt/clients/${member.id}`} className="ml-2 text-primary underline-offset-4 hover:underline">
+                        {profile.trainers.length ? "PT results" : "Assign a trainer"}
+                      </Link>
+                    )}
+                  </Detail>
                 </dl>
               </CardContent>
             </Card>
@@ -199,6 +218,22 @@ export default async function MemberProfilePage({
                   canManage={writable && hasPermission(ctx, "members.editContact")}
                 />
               </div>
+            )}
+            {ptPackages && (ptPackages.length > 0 || canSellPt) && (
+              <Card className="lg:col-span-3">
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+                  <div className="grid gap-1.5">
+                    <CardTitle>PT packages</CardTitle>
+                    <CardDescription>Personal training sessions bought in bundles.</CardDescription>
+                  </div>
+                  {canSellPt && (
+                    <SellPackageDialog gymSlug={gymSlug} today={today} currency={ctx.gym.currency} taxRateBps={ctx.gym.taxRateBps} packages={ptCatalog} trainers={ptTrainers} member={{ id: member.id, name }} />
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <MemberPackagesList packages={ptPackages} slug={gymSlug} showInvoices={hasPermission(ctx, "payments.view")} />
+                </CardContent>
+              </Card>
             )}
           </div>
         )}

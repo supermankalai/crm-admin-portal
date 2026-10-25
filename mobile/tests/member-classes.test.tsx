@@ -21,6 +21,7 @@ const base: MemberClass = {
   capacity: 10,
   booked: 4,
   waitlisted: 0,
+  deliveryMode: "IN_PERSON",
   spotsLeft: 6,
   my: null,
   canBook: true,

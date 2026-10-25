@@ -25,7 +25,7 @@ import {
   Users,
   ShieldCheck,
   Sparkles,
-  X, Dumbbell, Megaphone } from "lucide-react";
+  X, Dumbbell, HeartPulse, Megaphone } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,7 @@ const ICONS: Record<NavIcon, typeof LayoutDashboard> = {
   billing: Sparkles,
   announcements: Megaphone,
   workouts: Dumbbell,
+  pt: HeartPulse,
 };
 
 export type ShellProps = {

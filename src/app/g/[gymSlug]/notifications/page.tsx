@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, BellOff, CalendarClock, CreditCard, Gauge, Info, Megaphone, UserX, Users, type LucideIcon } from "lucide-react";
+import { AlertTriangle, BellOff, CalendarClock, CreditCard, Dumbbell, Gauge, Info, Megaphone, UserX, Users, type LucideIcon } from "lucide-react";
 import { AccessDenied } from "@/components/access-denied";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
@@ -24,6 +24,15 @@ const ICON: Record<NotificationType, LucideIcon> = {
   CLASS_FULL: Users,
   ANNOUNCEMENT: Megaphone,
   DELETION_REQUEST: UserX,
+  PT_ASSIGNED: Dumbbell,
+  PT_ENDED: Dumbbell,
+  PT_SESSION_BOOKED: CalendarClock,
+  PT_SESSION_CANCELLED: CalendarClock,
+  PT_SESSION_REMINDER: CalendarClock,
+  PT_CREDITS_LOW: Dumbbell,
+  PT_PACKAGE_EXPIRING: Dumbbell,
+  LIVE_CLASS_STARTING: CalendarClock,
+  LIVE_PT_STARTING: CalendarClock,
   // Member-only kinds (never sent to staff), mapped for completeness.
   CLASS_REMINDER: CalendarClock,
   WAITLIST_PROMOTED: Users,

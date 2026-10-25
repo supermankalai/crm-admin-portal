@@ -1,5 +1,5 @@
 import "server-only";
-import { addDays, diffDays, formatDate, formatDateTime, fromDateString, localDate, toDateString } from "@/domain/dates";
+import { addDays, diffDays, formatDate, formatDateTime, fromDateString, localDate, toDateString, type DateString } from "@/domain/dates";
 import { formatInvoiceNumber } from "@/domain/billing";
 import {
   CLASS_REMINDER_MINUTES,
@@ -10,6 +10,8 @@ import {
   expiringText,
   isNearLimit,
   limitText,
+  liveClassStartingText,
+  livePtStartingText,
   memberExpiringText,
   overdueText,
   PAYMENT_DUE_WARNING_DAYS,
@@ -21,7 +23,19 @@ import {
   type NotificationKind,
   type StaffAlertKind,
 } from "@/domain/notifications";
+import { LIVE_OPENS_MINUTES_BEFORE } from "@/domain/live";
 import type { GymRole } from "@/domain/permissions";
+import {
+  packageState,
+  PT_LOW_CREDIT_LEVELS,
+  PT_PACKAGE_EXPIRY_WARNING_DAYS,
+  PT_REMINDER_MINUTES,
+  ptCreditsLowMemberText,
+  ptCreditsLowTrainerText,
+  ptPackageExpiringText,
+  ptReminderMemberText,
+  ptReminderTrainerText,
+} from "@/domain/pt";
 import type { Tx } from "@/server/db/context";
 
 /**
@@ -82,7 +96,7 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
     select: {
       timezone: true,
       status: true,
-      subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, plan: { select: { name: true, maxMembers: true, maxStaff: true, maxLocations: true } } } },
+      subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, plan: { select: { name: true, maxMembers: true, maxStaff: true, maxLocations: true, featureLiveSessions: true } } } },
     },
   });
   if (!gym || gym.status === "SUSPENDED" || gym.status === "CANCELLED") return { created: 0, subjects: 0 };
@@ -178,6 +192,9 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
     }
   }
 
+  await personalTraining(tx, gymId, gym.timezone, today, now, toMember, direct);
+  if (gym.subscription?.plan.featureLiveSessions) await liveStarting(tx, gymId, gym.timezone, now, toMember, direct);
+
   // The gym's own platform subscription or trial ending soon.
   const sub = gym.subscription;
   if (sub && (sub.status === "TRIALING" || sub.status === "ACTIVE")) {
@@ -227,4 +244,95 @@ export async function generateGymNotifications(tx: Tx, gymId: string, now = new 
     if (channel === inAppChannel) created = n;
   }
   return { created, subjects: subjects.length + direct.length };
+}
+
+type ToMember = (memberId: string, kind: NotificationKind, key: string, text: { title: string; body: string }, entityType: string, entityId: string) => void;
+
+/**
+ * Online classes and PT sessions whose call has just opened (10 minutes before the start): the
+ * booked members, the PT client and the trainer are told to join. Once per person per session.
+ */
+async function liveStarting(tx: Tx, gymId: string, timezone: string, now: Date, toMember: ToMember, direct: OutgoingNotification[]) {
+  const toStaff = (userId: string, kind: NotificationKind, key: string, text: { title: string; body: string }, entityType: string, entityId: string) =>
+    direct.push({ gymId, recipientUserId: userId, type: kind, ...text, entityType, entityId, dedupeKey: dedupeKey(kind, `staff:${key}`, userId) });
+  const opening = { status: "SCHEDULED" as const, deliveryMode: { not: "IN_PERSON" as const }, startsAt: { gt: now, lte: new Date(now.getTime() + LIVE_OPENS_MINUTES_BEFORE * 60_000) } };
+
+  const classes = await tx.classSession.findMany({
+    where: { gymId, ...opening },
+    select: { id: true, startsAt: true, classType: { select: { name: true } }, trainer: { select: { userId: true, status: true } }, bookings: { where: { status: "BOOKED" }, select: { memberId: true } } },
+    take: 200,
+  });
+  for (const c of classes) {
+    const time = timeIn(c.startsAt, timezone);
+    for (const b of c.bookings) toMember(b.memberId, "LIVE_CLASS_STARTING", c.id, liveClassStartingText(c.classType.name, time, false), "ClassSession", c.id);
+    if (c.trainer.status === "ACTIVE") toStaff(c.trainer.userId, "LIVE_CLASS_STARTING", c.id, liveClassStartingText(c.classType.name, time, true), "ClassSession", c.id);
+  }
+
+  const pts = await tx.trainingSession.findMany({
+    where: { gymId, ...opening, member: { deletedAt: null } },
+    select: { id: true, memberId: true, startsAt: true, member: { select: { firstName: true, lastName: true } }, trainer: { select: { userId: true, status: true, user: { select: { name: true } } } } },
+    take: 500,
+  });
+  for (const s of pts) {
+    const time = timeIn(s.startsAt, timezone);
+    toMember(s.memberId, "LIVE_PT_STARTING", s.id, livePtStartingText(s.trainer.user.name, time, false), "TrainingSession", s.id);
+    if (s.trainer.status === "ACTIVE") toStaff(s.trainer.userId, "LIVE_PT_STARTING", s.id, livePtStartingText(`${s.member.firstName} ${s.member.lastName}`, time, true), "TrainingSession", s.id);
+  }
+}
+
+/**
+ * Personal training: a reminder before each PT session (to the member and the trainer), and
+ * packages running low or about to expire (to the member, and the trainer so they can talk
+ * about renewing). Each alert once per session, package and level.
+ */
+async function personalTraining(tx: Tx, gymId: string, timezone: string, today: DateString, now: Date, toMember: ToMember, direct: OutgoingNotification[]) {
+  const toStaff = (userId: string, kind: NotificationKind, key: string, text: { title: string; body: string }, entityType: string, entityId: string) =>
+    direct.push({ gymId, recipientUserId: userId, type: kind, ...text, entityType, entityId, dedupeKey: dedupeKey(kind, `staff:${key}`, userId) });
+  const name = (m: { firstName: string; lastName: string }) => `${m.firstName} ${m.lastName}`;
+
+  const soon = await tx.trainingSession.findMany({
+    where: { gymId, status: "SCHEDULED", startsAt: { gt: now, lte: new Date(now.getTime() + PT_REMINDER_MINUTES * 60_000) }, member: { deletedAt: null } },
+    select: { id: true, memberId: true, startsAt: true, member: { select: { firstName: true, lastName: true } }, trainer: { select: { userId: true, status: true, user: { select: { name: true } } } } },
+    take: 1000,
+  });
+  for (const s of soon) {
+    const time = timeIn(s.startsAt, timezone);
+    toMember(s.memberId, "PT_SESSION_REMINDER", s.id, ptReminderMemberText(s.trainer.user.name, time), "TrainingSession", s.id);
+    if (s.trainer.status === "ACTIVE") toStaff(s.trainer.userId, "PT_SESSION_REMINDER", s.id, ptReminderTrainerText(name(s.member), time), "TrainingSession", s.id);
+  }
+
+  // Live packages (not cancelled, not expired) with their credits.
+  const live = await tx.ptPackagePurchase.findMany({
+    where: { gymId, cancelledAt: null, expiresOn: { gte: fromDateString(today) }, member: { deletedAt: null } },
+    select: { id: true, name: true, memberId: true, trainerId: true, sessionsTotal: true, startsOn: true, expiresOn: true, member: { select: { firstName: true, lastName: true } } },
+    take: 2000,
+  });
+  if (!live.length) return;
+  const used = new Map(
+    (
+      await tx.trainingSession.groupBy({ by: ["purchaseId"], where: { purchaseId: { in: live.map((p) => p.id) }, status: { in: ["SCHEDULED", "COMPLETED", "NO_SHOW"] } }, _count: { _all: true } })
+    ).map((r) => [r.purchaseId as string, r._count._all])
+  );
+  // Who coaches whom (for the trainer's copy): the package's own trainer, or the member's trainers.
+  const links = await tx.trainerClient.findMany({
+    where: { gymId, memberId: { in: [...new Set(live.map((p) => p.memberId))] }, trainer: { status: "ACTIVE" } },
+    select: { memberId: true, trainerId: true, trainer: { select: { userId: true } } },
+  });
+  const trainerUsers = new Map<string, string>(links.map((l) => [l.trainerId, l.trainer.userId]));
+  for (const p of live) {
+    const { state, remaining } = packageState({ sessionsTotal: p.sessionsTotal, startsOn: toDateString(p.startsOn), expiresOn: toDateString(p.expiresOn), cancelledAt: null }, used.get(p.id) ?? 0, today);
+    if (state === "upcoming") continue;
+    const coaches = p.trainerId ? [p.trainerId] : links.filter((l) => l.memberId === p.memberId).map((l) => l.trainerId);
+    if ((PT_LOW_CREDIT_LEVELS as readonly number[]).includes(remaining)) {
+      toMember(p.memberId, "PT_CREDITS_LOW", `${p.id}:${remaining}`, ptCreditsLowMemberText(p.name, remaining), "PtPackagePurchase", p.id);
+      for (const t of coaches) {
+        const userId = trainerUsers.get(t);
+        if (userId) toStaff(userId, "PT_CREDITS_LOW", `${p.id}:${remaining}`, ptCreditsLowTrainerText(name(p.member), remaining), "PtPackagePurchase", p.id);
+      }
+    }
+    const endsOn = toDateString(p.expiresOn);
+    if (remaining > 0 && diffDays(today, endsOn) <= PT_PACKAGE_EXPIRY_WARNING_DAYS) {
+      toMember(p.memberId, "PT_PACKAGE_EXPIRING", `${p.id}:expiring`, ptPackageExpiringText(p.name, remaining, formatDate(endsOn)), "PtPackagePurchase", p.id);
+    }
+  }
 }

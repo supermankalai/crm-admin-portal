@@ -33,8 +33,8 @@ async function tryAsA(sql: string, ctx: Parameters<typeof asApp>[0] = ctxA()): P
 }
 
 // Refusals: RLS, missing grants, the gym-change trigger, append-only triggers, or a BEFORE trigger
-// that can't find the referenced row from inside the wrong gym.
-const REJECTED = /row-level security|permission denied|cannot be changed|append-only|plan_limit|payment_not_found/i;
+// that can't find the referenced row from inside the wrong gym (a payment, a PT package credit).
+const REJECTED = /row-level security|permission denied|cannot be changed|append-only|plan_limit|payment_not_found|pt:credit_mismatch/i;
 
 /**
  * Tables where even the gym's owner deliberately can't read all of the gym's own rows:

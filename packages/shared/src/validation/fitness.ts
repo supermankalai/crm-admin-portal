@@ -101,6 +101,8 @@ export const trainingSessionSchema = z.object({
   startsAt: z.string().datetime({ offset: true, message: "Choose a start time" }),
   durationMinutes: z.coerce.number().int().min(15, "At least 15 minutes").max(240, "At most 4 hours"),
   focus: optionalText(120),
+  /** In person (default), or a video call when the gym's plan includes live sessions. */
+  deliveryMode: z.enum(["IN_PERSON", "ONLINE"]).default("IN_PERSON"),
 });
 
 export const trainingSessionUpdateSchema = z.object({ status: z.enum(["COMPLETED", "CANCELLED", "NO_SHOW"]) });

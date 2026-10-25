@@ -128,6 +128,7 @@ export async function getInvoice(ctx: TenantContext, invoiceId: string) {
       include: {
         member: { select: { id: true, firstName: true, lastName: true, memberNumber: true, email: true } },
         membership: { select: { id: true, startDate: true, endDate: true, status: true, plan: { select: { name: true, type: true } } } },
+        ptPurchase: { select: { id: true, name: true, cancelledAt: true } },
         payments: {
           where: { deletedAt: null },
           orderBy: { receivedAt: "asc" },

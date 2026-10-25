@@ -9,6 +9,11 @@ import { localToIso } from "@/lib/fitness";
 import { useCreateSession } from "@/lib/fitness-queries";
 import { localDay } from "@/lib/format";
 
+const WHERE = [
+  { value: "IN_PERSON", label: "In person" },
+  { value: "ONLINE", label: "Online (video call)" },
+] as const;
+
 const DURATIONS = [
   { value: "30", label: "30 min" },
   { value: "45", label: "45 min" },
@@ -28,6 +33,7 @@ export default function BookSession() {
   const [at, setAt] = useState("07:00");
   const [minutes, setMinutes] = useState<(typeof DURATIONS)[number]["value"]>("60");
   const [focus, setFocus] = useState("");
+  const [where, setWhere] = useState<(typeof WHERE)[number]["value"]>("IN_PERSON");
   const [error, setError] = useState<string | null>(null);
   const [whenError, setWhenError] = useState<string | undefined>();
 
@@ -37,7 +43,7 @@ export default function BookSession() {
     const startsAt = localToIso(day, at, tz);
     if (!startsAt) return setWhenError("Enter a date like 2026-10-09 and a time like 07:30.");
     try {
-      await create.mutateAsync({ memberId, startsAt, durationMinutes: Number(minutes), focus });
+      await create.mutateAsync({ memberId, startsAt, durationMinutes: Number(minutes), focus, deliveryMode: where });
       router.back();
     } catch (e) {
       setWhenError(fieldErrorsOf(e).startsAt);
@@ -51,6 +57,9 @@ export default function BookSession() {
       <TextField label="Date" value={day} onChangeText={setDay} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" error={whenError} />
       <TextField label="Start time" value={at} onChangeText={setAt} placeholder="07:30" keyboardType="numbers-and-punctuation" />
       <ChipGroup label="Length" options={DURATIONS} value={minutes} onChange={setMinutes} />
+      {/* Only when the gym's plan includes live sessions. */}
+      {gym?.liveSessions ? <ChipGroup label="Where" options={WHERE} value={where} onChange={setWhere} /> : null}
+      {where === "ONLINE" ? <Text className="text-sm text-zinc-500 dark:text-zinc-400">{name} joins from the app. You can both join 10 minutes before the start.</Text> : null}
       <TextField label="Focus (optional)" value={focus} onChangeText={setFocus} placeholder="e.g. Squat technique" maxLength={120} />
       <FormError message={error} />
       {!online ? <FormError message="You're offline. Booking needs a connection." /> : null}

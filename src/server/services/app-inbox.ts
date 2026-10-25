@@ -33,6 +33,14 @@ function targetFor(type: string, kind: GymAuth["kind"]): Target | null {
   return type === "MEMBERSHIP_EXPIRING" || type === "PAYMENT_OVERDUE" || type === "CLASS_FULL" ? "alerts" : null;
 }
 
+/** A live session's "starts soon" alert opens its call. */
+function liveFor(type: string, entityType: string | null, entityId: string | null): { kind: "class" | "pt"; sessionId: string } | null {
+  if (!entityId) return null;
+  if (type === "LIVE_CLASS_STARTING" && entityType === "ClassSession") return { kind: "class", sessionId: entityId };
+  if (type === "LIVE_PT_STARTING" && entityType === "TrainingSession") return { kind: "pt", sessionId: entityId };
+  return null;
+}
+
 export async function listInbox(auth: GymAuth, q: { cursor?: string; limit: number }) {
   const c = decodeCursor(q.cursor);
   const me = auth.user.id;
@@ -42,7 +50,7 @@ export async function listInbox(auth: GymAuth, q: { cursor?: string; limit: numb
         where: { recipientUserId: me, ...before("createdAt", c) },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: q.limit + 1,
-        select: { id: true, type: true, title: true, body: true, readAt: true, createdAt: true },
+        select: { id: true, type: true, title: true, body: true, readAt: true, createdAt: true, entityType: true, entityId: true },
       }),
       tx.notification.count({ where: { recipientUserId: me, readAt: null } }),
     ]);
@@ -50,7 +58,7 @@ export async function listInbox(auth: GymAuth, q: { cursor?: string; limit: numb
     return {
       unread,
       nextCursor: p.nextCursor,
-      items: p.items.map((n) => ({ ...n, target: targetFor(n.type, auth.kind), readAt: n.readAt?.toISOString() ?? null, createdAt: n.createdAt.toISOString() })),
+      items: p.items.map(({ entityType, entityId, ...n }) => ({ ...n, target: targetFor(n.type, auth.kind), live: liveFor(n.type, entityType, entityId), readAt: n.readAt?.toISOString() ?? null, createdAt: n.createdAt.toISOString() })),
     };
   });
 }
@@ -72,9 +80,16 @@ export async function readAllInbox(auth: GymAuth) {
 
 // ─────────────────────────────── Preferences ───────────────────────────────
 
-/** Members see member categories; staff see staff alerts (plus announcements for everyone). */
-function availableFor(kind: GymAuth["kind"]): PreferenceKey[] {
-  return PREFERENCE_KEYS.filter((k) => PREFERENCE_LABELS[k].for === "both" || PREFERENCE_LABELS[k].for === (kind === "member" ? "member" : "staff"));
+/**
+ * Members see member categories; staff see staff alerts (plus announcements for everyone).
+ * Personal training alerts only reach members, trainers and managers, so front desk don't get the switch.
+ */
+function availableFor(auth: GymAuth): PreferenceKey[] {
+  const who = auth.kind === "member" ? "member" : "staff";
+  return PREFERENCE_KEYS.filter((k) => {
+    if (k === "training" && auth.kind === "staff" && auth.staff.role === "FRONT_DESK") return false;
+    return PREFERENCE_LABELS[k].for === "both" || PREFERENCE_LABELS[k].for === who;
+  });
 }
 
 function pick(row: Preferences | null): Preferences {
@@ -83,11 +98,11 @@ function pick(row: Preferences | null): Preferences {
 
 export async function getPreferences(auth: GymAuth) {
   const row = await inGym(auth, (tx) => tx.notificationPreference.findFirst({ where: { userId: auth.user.id } }));
-  return { preferences: pick(row), available: availableFor(auth.kind) };
+  return { preferences: pick(row), available: availableFor(auth) };
 }
 
 export async function updatePreferences(auth: GymAuth, changes: Partial<Preferences>) {
-  const allowed = availableFor(auth.kind);
+  const allowed = availableFor(auth);
   const data = Object.fromEntries(Object.entries(changes).filter(([k, v]) => allowed.includes(k as PreferenceKey) && typeof v === "boolean"));
   const gymId = gymIdOf(auth);
   const row = await inGym(auth, (tx) =>
@@ -99,13 +114,13 @@ export async function updatePreferences(auth: GymAuth, changes: Partial<Preferen
 // ─────────────────────────────── Push tokens ───────────────────────────────
 
 /** One token per device per gym: registering again (new token, or after reinstall) replaces it. */
-export async function registerPushToken(auth: GymAuth, input: { token: string; platform: "ios" | "android" }) {
+export async function registerPushToken(auth: GymAuth, input: { token: string; platform: "ios" | "android"; provider: "expo" | "fcm" }) {
   const gymId = gymIdOf(auth);
   await inGym(auth, (tx) =>
     tx.pushToken.upsert({
       where: { gymId_deviceSessionId: { gymId, deviceSessionId: auth.sessionId } },
-      create: { gymId, userId: auth.user.id, deviceSessionId: auth.sessionId, token: input.token, platform: input.platform },
-      update: { token: input.token, platform: input.platform, invalidatedAt: null },
+      create: { gymId, userId: auth.user.id, deviceSessionId: auth.sessionId, token: input.token, platform: input.platform, provider: input.provider },
+      update: { token: input.token, platform: input.platform, provider: input.provider, invalidatedAt: null },
       select: { id: true },
     })
   );

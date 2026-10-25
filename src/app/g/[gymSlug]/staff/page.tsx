@@ -46,7 +46,7 @@ export default async function StaffPage({ params }: { params: Promise<{ gymSlug:
             {staff.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
-                  <Link href={`/g/${ctx.gym.slug}/staff/${s.id}`} className="font-medium hover:underline">
+                  <Link href={`/g/${ctx.gym.slug}/staff/${s.id}`} className="font-medium text-primary underline-offset-4 hover:underline">
                     {s.user.name}
                   </Link>
                   {s.title && <span className="block text-xs text-muted-foreground">{s.title}</span>}
@@ -58,7 +58,17 @@ export default async function StaffPage({ params }: { params: Promise<{ gymSlug:
                   <span className="block">{s.user.email}</span>
                   <span className="block text-muted-foreground">{s.phone ?? ""}</span>
                 </TableCell>
-                <TableCell className="tabular-nums">{s.role === "TRAINER" ? s._count.clients : "—"}</TableCell>
+                <TableCell className="tabular-nums">
+                  {s.role !== "TRAINER" ? (
+                    "—"
+                  ) : canInvite ? (
+                    <Link href={`/g/${ctx.gym.slug}/staff/${s.id}#clients`} className="text-primary underline-offset-4 hover:underline">
+                      {s._count.clients} · Assign clients
+                    </Link>
+                  ) : (
+                    s._count.clients
+                  )}
+                </TableCell>
                 <TableCell className="tabular-nums">{s._count.classesTaught || "—"}</TableCell>
                 <TableCell className="text-xs">{s.user.lastLoginAt ? formatDateTime(s.user.lastLoginAt, tz) : "Never"}</TableCell>
               </TableRow>

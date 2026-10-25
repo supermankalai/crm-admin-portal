@@ -92,7 +92,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ g
                     <li key={c.id}>
                       <Link href={`/g/${gymSlug}/classes/${c.id}`} className="flex items-center gap-2 hover:underline">
                         <span className="size-2 rounded-full" style={{ backgroundColor: c.classType.color }} aria-hidden />
-                        {when.format(c.startsAt)} {localTime(c.startsAt, tz)} · {c.classType.name} · {c.room.name}
+                        {when.format(c.startsAt)} {localTime(c.startsAt, tz)} · {c.classType.name} · {c.room?.name ?? "Online"}
                       </Link>
                     </li>
                   ))}
@@ -102,7 +102,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ g
           </Card>
 
           {staff.role === "TRAINER" && (
-            <Card>
+            <Card id="clients" className="scroll-mt-20">
               <CardHeader>
                 <CardTitle>Clients ({profile.clients.length})</CardTitle>
               </CardHeader>
@@ -113,7 +113,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ g
                   <ul className="divide-y">
                     {profile.clients.map((m) => (
                       <li key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
-                        <Link href={`/g/${gymSlug}/members/${m.id}`} className="flex-1 hover:underline">
+                        <Link href={`/g/${gymSlug}/pt/clients/${m.id}`} className="flex-1 hover:underline">
                           {m.firstName} {m.lastName} <span className="font-mono text-xs text-muted-foreground">{formatMemberNumber(m.memberNumber)}</span>
                         </Link>
                         {writable && isManager && <UnassignClient gymSlug={gymSlug} staffId={staff.id} memberId={m.id} name={`${m.firstName} ${m.lastName}`} />}

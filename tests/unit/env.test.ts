@@ -76,3 +76,24 @@ describe("mobile and SMS settings", () => {
     expect(issuesFor({ ...valid(), SMS_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: `AC${"a".repeat(32)}`, TWILIO_AUTH_TOKEN: "t".repeat(32), TWILIO_FROM: "+15550001111" })).toEqual([]);
   });
 });
+
+describe("LiveKit settings", () => {
+  const live = { LIVEKIT_URL: "wss://live.example.com", LIVEKIT_API_KEY: "APIabc123", LIVEKIT_API_SECRET: "s".repeat(32) };
+
+  it("are optional, but all three or none", () => {
+    expect(issuesFor(valid())).toEqual([]);
+    expect(issuesFor({ ...valid(), ...live })).toEqual([]);
+    expect(issuesFor({ ...valid(), LIVEKIT_URL: live.LIVEKIT_URL }).join()).toMatch(/LIVEKIT_API_KEY.*LIVEKIT_API_SECRET/);
+  });
+
+  it("need wss:// (ws:// only on localhost) and a real secret", () => {
+    expect(issuesFor({ ...valid(), ...live, LIVEKIT_URL: "ws://live.example.com" }).join()).toMatch(/LIVEKIT_URL/);
+    expect(issuesFor({ ...valid(), ...live, LIVEKIT_URL: "https://live.example.com" }).join()).toMatch(/LIVEKIT_URL/);
+    expect(issuesFor({ ...valid(), ...live, LIVEKIT_URL: "ws://localhost:7880" })).toEqual([]);
+    expect(issuesFor({ ...valid(), ...live, LIVEKIT_API_SECRET: "short" }).join()).toMatch(/LIVEKIT_API_SECRET/);
+  });
+
+  it("never echo the secret in errors", () => {
+    expect(issuesFor({ ...valid(), ...live, LIVEKIT_API_SECRET: "tiny-secret" }).join()).not.toContain("tiny-secret");
+  });
+});

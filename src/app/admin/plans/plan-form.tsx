@@ -62,6 +62,7 @@ export function PlanForm({ plan, gymCount }: { plan: PlanUpdateInput; gymCount: 
             ["featureCsvExport", "CSV export"],
             ["featureMobileApp", "Staff mobile app"],
             ["featureMemberApp", "Member app"],
+            ["featureLiveSessions", "Live video sessions"],
             ["isActive", "Offered to new gyms"],
           ] as const
         ).map(([field, label]) => (

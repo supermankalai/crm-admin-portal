@@ -157,6 +157,7 @@ beforeAll(async () => {
 
   // Gym A's records for every kind of id the contract takes.
   A.memberId = w.memberA.id;
+  A.kind = "class"; // live sessions: /live/{kind}/{sessionId}/token
   const locA = await db.location.create({ data: { gymId: w.gymA.id, name: "A main" } });
   locB = (await db.location.create({ data: { gymId: w.gymB.id, name: "B main" } })).id;
   const room = await db.room.create({ data: { gymId: w.gymA.id, locationId: locA.id, name: "Studio", capacity: 10 } });
@@ -258,7 +259,9 @@ describe("cross-gym and cross-member access", () => {
     const wrong: string[] = [];
     for (const [name, d] of ENDPOINTS) {
       const keys = Object.keys(d.params?.shape ?? {});
-      if (d.auth === "staff" || d.auth === "none" || !keys.length || name === "memberBook") continue;
+      // A class is on everyone's timetable: booking it, or being told to book before joining it
+      // online (403), isn't someone else's record.
+      if (d.auth === "staff" || d.auth === "none" || !keys.length || name === "memberBook" || name === "liveJoin") continue;
       const r = await call(name, t.memberA2, Object.fromEntries(keys.map((k) => [k, A[k]])));
       if (r.status !== 404) wrong.push(`${name}: ${r.status}`);
     }

@@ -3,7 +3,7 @@ import { preferenceFor, pushText, type NotificationKind } from "@/domain/notific
 
 describe("push notification text", () => {
   it("is generic: gym name as title, nothing personal in the body", () => {
-    const kinds: NotificationKind[] = ["CLASS_REMINDER", "WAITLIST_PROMOTED", "MEMBERSHIP_EXPIRING", "PAYMENT_DUE", "MEMBERSHIP_EXPIRING", "PAYMENT_OVERDUE", "CLASS_FULL", "DELETION_REQUEST"];
+    const kinds: NotificationKind[] = ["CLASS_REMINDER", "WAITLIST_PROMOTED", "MEMBERSHIP_EXPIRING", "PAYMENT_DUE", "MEMBERSHIP_EXPIRING", "PAYMENT_OVERDUE", "CLASS_FULL", "DELETION_REQUEST", "PT_ASSIGNED", "PT_ENDED", "PT_SESSION_BOOKED", "PT_SESSION_CANCELLED", "PT_SESSION_REMINDER", "PT_CREDITS_LOW", "PT_PACKAGE_EXPIRING"];
     for (const kind of kinds) {
       for (const who of ["member", "staff"] as const) {
         const t = pushText(kind, who, "Iron Temple");
@@ -27,5 +27,10 @@ describe("push notification text", () => {
     expect(preferenceFor("MEMBERSHIP_EXPIRING", "member")).toBe("membership");
     expect(preferenceFor("MEMBERSHIP_EXPIRING", "staff")).toBe("staffAlerts");
     expect(preferenceFor("ANNOUNCEMENT", "staff")).toBe("announcements");
+    // Personal training alerts are switched together, for members and trainers alike.
+    for (const kind of ["PT_ASSIGNED", "PT_ENDED", "PT_SESSION_BOOKED", "PT_SESSION_CANCELLED", "PT_SESSION_REMINDER", "PT_CREDITS_LOW", "PT_PACKAGE_EXPIRING"] as const) {
+      expect(preferenceFor(kind, "member")).toBe("training");
+      expect(preferenceFor(kind, "staff")).toBe("training");
+    }
   });
 });

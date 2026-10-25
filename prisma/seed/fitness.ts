@@ -4,6 +4,8 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { encryptField, encryptJson } from "@/server/crypto";
 import { getStorage } from "@/server/storage";
 import { GYMS } from "./config";
+import { toDateString } from "@/domain/dates";
+import { invoiceTotals } from "@/domain/money";
 import { at, dateOnly, id } from "./lib";
 
 /**
@@ -11,8 +13,9 @@ import { at, dateOnly, id } from "./lib";
  * weekly measurements, progress photos, private trainer notes and personal training sessions.
  * Deterministic (no faker), so the rest of the seed stays identical.
  *
- *   trainer1@<gym domain> coaches member1@<gym domain> (the demo member app login), who has an
- *   active plan, three months of measurements, three progress photos and PT sessions.
+ *   The gym's first trainer by email (at Iron Temple that's the shared account priya.nair@…, then
+ *   trainer2@…) coaches member1@<gym domain> (the demo member app login), who has an active plan,
+ *   a weight-loss goal, three months of measurements, three progress photos and PT sessions.
  */
 
 const PLANS = [
@@ -40,6 +43,15 @@ const TEMPLATE = {
   notes: "Starting point for new clients — adjust loads at the first session.",
   days: [{ title: "Full body", exercises: [["Leg press", 3, "12", 90], ["Chest press machine", 3, "12", 90], ["Cable row", 3, "12", 90], ["Bird dog", 3, "10", 45]] }],
 } as const;
+
+const GOALS = ["WEIGHT_LOSS", "MUSCLE_GAIN", "STRENGTH", "GENERAL_FITNESS", "ENDURANCE"] as const;
+
+const GOAL_NOTES = [
+  "Train three times a week; walk on rest days.",
+  "Protect the lower back: hinge pattern before loading.",
+  "Wedding in spring: wants to feel confident in the photos.",
+  "Building up to a 10K run.",
+];
 
 const NOTES = [
   "Old shoulder injury — keep overhead pressing light and pain-free.",
@@ -98,19 +110,22 @@ export async function seedFitness(db: PrismaClient) {
     trainers.sort((a, b) => (a.user.email ?? "").localeCompare(b.user.email ?? "", undefined, { numeric: true }));
     const [trainer1] = trainers;
     if (!trainer1) continue;
+    const owner = await db.staffMember.findFirst({ where: { gymId, role: "OWNER", status: "ACTIVE" }, orderBy: { createdAt: "asc" }, select: { id: true } });
+    const catalog = await seedPackageCatalog(db, gymId);
 
     // The demo member (member1@…) is trainer1's client.
     const demoAccount = await db.memberAccount.findFirst({ where: { gymId, user: { email: `member1@${spec.emailDomain}` } }, select: { memberId: true } });
     if (demoAccount) {
       await db.trainerClient.upsert({
         where: { trainerId_memberId: { trainerId: trainer1.id, memberId: demoAccount.memberId } },
-        create: { gymId, trainerId: trainer1.id, memberId: demoAccount.memberId, createdAt: at(-90, 10) },
+        create: { gymId, trainerId: trainer1.id, memberId: demoAccount.memberId, startedOn: dateOnly(-90), createdAt: at(-90, 10) },
         update: {},
       });
     }
 
     // Measurements belong to the member, not the trainer: seed them once even with two trainers.
-    const measured = new Set<string>();
+    // First weight per member: a second trainer's targets start from the same measurements.
+    const measured = new Map<string, number>();
     for (const [t, trainer] of trainers.entries()) {
       await createPlan(db, gymId, trainer.id, null, TEMPLATE, "DRAFT", 120);
       const links = await db.trainerClient.findMany({ where: { trainerId: trainer.id, member: { deletedAt: null } }, orderBy: { createdAt: "asc" }, take: 6, select: { memberId: true } });
@@ -153,8 +168,33 @@ export async function seedFitness(db: PrismaClient) {
           };
           return { id: entryId, gymId, memberId, recordedOn: dateOnly(-(11 - i) * 7), measurementsEnc: encryptJson(values, { gymId, model: "ProgressEntry", field: "measurements", recordId: entryId }) };
         });
-        if (!measured.has(memberId)) await db.progressEntry.createMany({ data: entries });
-        measured.add(memberId);
+        if (!measured.has(memberId)) {
+          await db.progressEntry.createMany({ data: entries });
+          measured.set(memberId, startWeight);
+        }
+        const baseWeight = measured.get(memberId)!;
+
+        // The PT goal: started with the measurements (12 weeks ago), with targets for most clients.
+        const goal = isDemo ? "WEIGHT_LOSS" : GOALS[(t + c) % GOALS.length];
+        const link = await db.trainerClient.findUniqueOrThrow({ where: { trainerId_memberId: { trainerId: trainer.id, memberId } }, select: { id: true } });
+        const targets =
+          c % 3 === 2 && !isDemo
+            ? null
+            : {
+                ...(goal === "MUSCLE_GAIN" ? { targetWeightKg: baseWeight + 3 } : goal === "WEIGHT_LOSS" || isDemo ? { targetWeightKg: baseWeight - 6 } : {}),
+                ...(goal === "WEIGHT_LOSS" || isDemo ? { targetBodyFatPct: 20 } : {}),
+                targetDate: toDateString(dateOnly(60 + c * 7)),
+                note: GOAL_NOTES[(t + c) % GOAL_NOTES.length],
+              };
+        await db.trainerClient.update({
+          where: { id: link.id },
+          data: {
+            goal,
+            startedOn: dateOnly(-84),
+            targetsEnc: targets ? encryptJson(targets, { gymId, model: "TrainerClient", field: "targets", recordId: link.id }) : null,
+            assignedById: owner?.id ?? null,
+          },
+        });
 
         // Private notes on some clients.
         if (isDemo || c % 2 === 0) {
@@ -164,8 +204,14 @@ export async function seedFitness(db: PrismaClient) {
           });
         }
 
-        // PT sessions: three past, two upcoming (early mornings, before group classes).
+        // A package for most clients, with this trainer, bought a month ago: 10 sessions, or 6 for the
+        // second client (who is then down to 1 left). Every third client has none (sessions not covered).
+        const purchaseId = owner && (isDemo || c % 3 !== 2) ? await sellSeedPackage(db, gymId, memberId, trainer.id, owner.id, c === 1 ? catalog.six : catalog.ten) : null;
+
+        // PT sessions: three past, two upcoming (early mornings, before group classes). Each trainer's
+        // first client trains online now and then (a video call, see docs/LIVE_SESSIONS.md).
         const sessions = [-21, -14, -7, 2, 9].map((day, i) => ({
+          purchaseId,
           gymId,
           trainerId: trainer.id,
           memberId,
@@ -173,9 +219,22 @@ export async function seedFitness(db: PrismaClient) {
           endsAt: at(day, 7, (c % 2) * 30),
           status: day > 0 ? ("SCHEDULED" as const) : i === 1 && !isDemo ? ("NO_SHOW" as const) : ("COMPLETED" as const),
           focus: ["Technique check", "Progress review", "Conditioning", "New programme walkthrough", "Mobility"][i],
+          bookedById: trainer.id,
+          deliveryMode: c === 0 && (i === 0 || i === 4) ? ("ONLINE" as const) : ("IN_PERSON" as const),
         }));
         // Spread trainers' clients across days so a trainer never has two at once.
         await db.trainingSession.createMany({ data: sessions.map((s) => ({ ...s, startsAt: new Date(s.startsAt.getTime() + c * 86_400_000), endsAt: new Date(s.endsAt.getTime() + c * 86_400_000) })) });
+        // Who was in the past online call, and for how long (normally recorded by LiveKit's webhook).
+        const call = c === 0 ? await db.trainingSession.findFirst({ where: { gymId, trainerId: trainer.id, memberId, deliveryMode: "ONLINE", status: "COMPLETED" }, select: { id: true, startsAt: true, endsAt: true } }) : null;
+        if (call) {
+          const plus = (d: Date, min: number) => new Date(d.getTime() + min * 60_000);
+          await db.liveAttendance.createMany({
+            data: [
+              { gymId, kind: "PT", sessionId: call.id, staffId: trainer.id, firstJoinedAt: plus(call.startsAt, -4), lastLeftAt: plus(call.endsAt, 1), seconds: 65 * 60 },
+              { gymId, kind: "PT", sessionId: call.id, memberId, firstJoinedAt: plus(call.startsAt, 2), lastLeftAt: plus(call.endsAt, -2), seconds: 56 * 60 },
+            ],
+          });
+        }
 
         // Progress photos for the demo member.
         if (isDemo) {
@@ -190,5 +249,95 @@ export async function seedFitness(db: PrismaClient) {
         }
       }
     }
+
+    // One finished assignment: the last trainer coached a member for two months, until a month ago.
+    const former = trainers[trainers.length - 1];
+    const past = await db.member.findFirst({ where: { gymId, deletedAt: null, trainers: { none: { trainerId: former.id } } }, orderBy: { memberNumber: "asc" }, select: { id: true } });
+    if (owner && past) {
+      const historyId = id();
+      await db.ptAssignmentHistory.create({
+        data: {
+          id: historyId,
+          gymId,
+          trainerId: former.id,
+          memberId: past.id,
+          goal: "STRENGTH",
+          targetsEnc: encryptJson({ note: "Deadlift 100 kg before the summer." }, { gymId, model: "PtAssignmentHistory", field: "targets", recordId: historyId }),
+          startedOn: dateOnly(-95),
+          assignedById: owner.id,
+          endedAt: at(-30, 12),
+          endedById: owner.id,
+          endReason: "Goal reached",
+        },
+      });
+    }
   }
+}
+
+const CATALOG = [
+  { key: "single", name: "Single session", description: "Pay as you go.", sessionCount: 1, priceMinor: 150_000, validityDays: 30, isActive: true },
+  { key: "six", name: "6 sessions", description: "A short block to learn the basics.", sessionCount: 6, priceMinor: 780_000, validityDays: 60, isActive: true },
+  { key: "ten", name: "10 sessions", description: "Our most popular package.", sessionCount: 10, priceMinor: 1_200_000, validityDays: 90, isActive: true },
+  { key: "twenty", name: "20 sessions", description: "Best value per session.", sessionCount: 20, priceMinor: 2_200_000, validityDays: 180, isActive: true },
+  { key: "summer", name: "Summer shred (ended)", description: null, sessionCount: 8, priceMinor: 880_000, validityDays: 56, isActive: false },
+] as const;
+
+type SeedPackage = { id: string; name: string; sessionCount: number; priceMinor: number; validityDays: number };
+
+async function seedPackageCatalog(db: PrismaClient, gymId: string) {
+  const out: Record<string, SeedPackage> = {};
+  for (const { key, ...p } of CATALOG) {
+    const pkgId = id();
+    await db.ptPackage.create({ data: { id: pkgId, gymId, ...p, createdAt: at(-150, 10) } });
+    out[key] = { id: pkgId, ...p };
+  }
+  return out as Record<(typeof CATALOG)[number]["key"], SeedPackage>;
+}
+
+/** A package sold 30 days ago and paid in full: invoice, payment and purchase, like the app does. */
+async function sellSeedPackage(db: PrismaClient, gymId: string, memberId: string, trainerId: string, soldById: string, pkg: SeedPackage) {
+  const gym = await db.gym.findUniqueOrThrow({ where: { id: gymId }, select: { taxRateBps: true, currency: true } });
+  const counter = await db.gymCounter.update({ where: { gymId_key: { gymId, key: "invoice" } }, data: { value: { increment: 1 } }, select: { value: true } });
+  const { subtotalMinor, taxMinor, totalMinor: total } = invoiceTotals(pkg.priceMinor, gym.taxRateBps);
+  const soldAt = at(-30, 11);
+  const invoiceId = id();
+  await db.invoice.create({
+    data: {
+      id: invoiceId,
+      gymId,
+      number: counter.value,
+      description: `PT package: ${pkg.name} (${pkg.sessionCount} sessions)`,
+      memberId,
+      currency: gym.currency,
+      subtotalMinor,
+      taxMinor,
+      totalMinor: total,
+      amountPaidMinor: total,
+      status: "PAID",
+      issuedAt: soldAt,
+      dueDate: dateOnly(-23),
+      paidAt: soldAt,
+      createdAt: soldAt,
+    },
+  });
+  await db.payment.create({ data: { gymId, memberId, invoiceId, amountMinor: total, currency: gym.currency, method: "CARD", receivedAt: soldAt, recordedById: soldById, createdAt: soldAt } });
+  const purchaseId = id();
+  await db.ptPackagePurchase.create({
+    data: {
+      id: purchaseId,
+      gymId,
+      memberId,
+      packageId: pkg.id,
+      trainerId,
+      name: pkg.name,
+      sessionsTotal: pkg.sessionCount,
+      priceMinor: pkg.priceMinor,
+      startsOn: dateOnly(-30),
+      expiresOn: dateOnly(-30 + pkg.validityDays - 1),
+      invoiceId,
+      soldById,
+      createdAt: soldAt,
+    },
+  });
+  return purchaseId;
 }

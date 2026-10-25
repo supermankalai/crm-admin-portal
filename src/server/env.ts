@@ -65,11 +65,24 @@ const envSchema = z
     TWILIO_ACCOUNT_SID: z.string().regex(/^AC[0-9a-f]{32}$/i, "must look like AC… (34 characters)").optional(),
     TWILIO_AUTH_TOKEN: z.string().min(16).optional(),
     TWILIO_FROM: z.string().min(3).optional(),
-    // Push notifications: `dev-outbox` writes each push to .dev-outbox/*.push.json; `expo` sends
-    // through Expo's push service. EXPO_ACCESS_TOKEN is needed only if the Expo project has
-    // "enhanced push security" turned on.
-    PUSH_PROVIDER: z.enum(["dev-outbox", "expo"]).default("dev-outbox"),
+    // Push notifications: `dev-outbox` writes each push to .dev-outbox/*.push.json; `live` sends
+    // them for real — Expo tokens through Expo's push service, Firebase (FCM) tokens straight to
+    // Firebase using FIREBASE_SERVICE_ACCOUNT_FILE (path to the service-account key, kept out of
+    // git). `expo` is the old name for `live`. EXPO_ACCESS_TOKEN is needed only if the Expo
+    // project has "enhanced push security" turned on.
+    PUSH_PROVIDER: z.enum(["dev-outbox", "live", "expo"]).default("dev-outbox"),
     EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
+    FIREBASE_SERVICE_ACCOUNT_FILE: z.string().min(1).optional(),
+    // Live sessions (online PT, live classes) on a LiveKit server: all three or none, and without
+    // them the feature is off. The URL is what browsers and phones connect to (wss://; ws:// only
+    // on localhost); the server API is reached at the matching https:// address. The secret signs
+    // join tokens and verifies webhooks, and never leaves the server.
+    LIVEKIT_URL: z
+      .url()
+      .refine((v) => /^wss:\/\//.test(v) || /^ws:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(v), "must be a wss:// URL (ws:// only for localhost)")
+      .optional(),
+    LIVEKIT_API_KEY: z.string().min(3).max(200).optional(),
+    LIVEKIT_API_SECRET: z.string().min(16, "must be at least 16 characters").optional(),
     LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),
     // Per-IP ceilings (per 15 min for login, per hour for sign-up). Raise only behind a trusted
     // proxy that sets X-Forwarded-For, or for automated test runs.
@@ -86,6 +99,12 @@ const envSchema = z
         path: ["ENCRYPTION_ACTIVE_KEY_VERSION"],
         message: `no key with version ${env.ENCRYPTION_ACTIVE_KEY_VERSION} in ENCRYPTION_KEYS`,
       });
+    }
+    const livekit = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"] as const;
+    if (livekit.some((key) => env[key]) && !livekit.every((key) => env[key])) {
+      for (const key of livekit) {
+        if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "is required when any LIVEKIT_* setting is set" });
+      }
     }
     if (env.SMS_PROVIDER === "twilio") {
       for (const key of ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"] as const) {

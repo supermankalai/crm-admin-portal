@@ -24,22 +24,36 @@ export const roomSchema = z.object({
   capacity: z.coerce.number().int().min(1).max(500),
 });
 
+export const deliveryModeSchema = z.enum(["IN_PERSON", "ONLINE", "HYBRID"]);
+/** A room, or none ("" or null) for an online class. Whether one is needed is checked per mode. */
+const optionalRoom = z
+  .string()
+  .trim()
+  .max(64)
+  .nullish()
+  .transform((v) => v || null);
+
 export const sessionSchema = z
   .object({
     classTypeId: id,
     trainerId: id,
-    roomId: id,
+    deliveryMode: deliveryModeSchema.default("IN_PERSON"),
+    roomId: optionalRoom,
     date: z.string().refine(isDateString, "Choose a date"),
     startTime: time,
     durationMinutes: z.coerce.number().int().min(10).max(240),
     capacity: z.coerce.number().int().min(1).max(500),
     repeatWeeks: z.coerce.number().int().min(1, "At least 1").max(12, "At most 12 weeks"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.deliveryMode !== "ONLINE" && !v.roomId) ctx.addIssue({ code: "custom", path: ["roomId"], message: "Choose a room" });
   });
 
+/** Trainer, room and capacity. How a class is delivered is set when it's scheduled. */
 export const sessionUpdateSchema = z.object({
   sessionId: id,
   trainerId: id,
-  roomId: id,
+  roomId: optionalRoom,
   capacity: z.coerce.number().int().min(1).max(500),
 });
 
@@ -49,4 +63,5 @@ export const bookSchema = z.object({ sessionId: id, memberId: id });
 export const bookingIdSchema = z.object({ bookingId: id });
 export const attendanceSchema = z.object({ bookingId: id, attended: z.boolean() });
 
-export type SessionInput = z.output<typeof sessionSchema>;
+/** What the scheduling service takes: the form's values, with in person as the default. */
+export type SessionInput = Omit<z.output<typeof sessionSchema>, "deliveryMode"> & { deliveryMode?: z.output<typeof deliveryModeSchema> };

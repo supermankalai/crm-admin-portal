@@ -62,7 +62,7 @@ export const api = {
 
   notificationPreferences: { method: "GET", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Which push alerts you get from this gym (the in-app list keeps everything)", response: s.preferencesResponseSchema },
   updateNotificationPreferences: { method: "PUT", path: "/me/notification-preferences", auth: "gym", tag: "Me", summary: "Turn push alert categories on or off for this gym", body: s.updatePreferencesSchema, response: s.preferencesResponseSchema },
-  registerPushToken: { method: "POST", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Register this device's Expo push token for the selected gym", body: s.pushTokenRequestSchema, response: s.okSchema },
+  registerPushToken: { method: "POST", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Register this device's push token (Expo, or Firebase on Android) for the selected gym", body: s.pushTokenRequestSchema, response: s.okSchema },
   removePushToken: { method: "DELETE", path: "/me/push-token", auth: "gym", tag: "Me", summary: "Stop push alerts from this gym on this device", response: s.okSchema },
 
   // ── Notifications & announcements ──
@@ -124,6 +124,9 @@ export const api = {
   trainerCreateSession: { method: "POST", path: "/trainer/training-sessions", auth: "staff", tag: "Trainer", summary: "Book a personal training session with a client (no double-booking)", body: trainingSessionSchema, response: s.trainingSessionCreatedResponseSchema, status: 201 },
   trainerUpdateSession: { method: "PATCH", path: "/trainer/training-sessions/{trainingSessionId}", auth: "staff", tag: "Trainer", summary: "Mark a personal training session completed, cancelled or no-show", params: s.trainingSessionIdParamsSchema, body: trainingSessionUpdateSchema, response: s.okSchema },
   createMemberInvite: { method: "POST", path: "/staff/members/{memberId}/app-invite", auth: "staff", tag: "Staff", summary: "Invite a member to the app by email, SMS or a front-desk code", params: s.memberIdParamsSchema, body: s.createMemberInviteRequestSchema, response: s.createMemberInviteResponseSchema, status: 201 },
+
+  // ── Live sessions ── (staff: the session's trainer; members: a place in the class, or their own PT session)
+  liveJoin: { method: "POST", path: "/live/{kind}/{sessionId}/token", auth: "gym", tag: "Live", summary: "Get a LiveKit token to join an online class or PT session (opens 10 minutes before the start)", params: s.liveJoinParamsSchema, response: s.liveJoinResponseSchema },
 } as const satisfies Record<string, Endpoint>;
 
 export type Api = typeof api;

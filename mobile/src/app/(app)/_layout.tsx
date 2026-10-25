@@ -4,7 +4,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useBrand } from "@/hooks/use-brand";
 import { useSession } from "@/hooks/use-session";
 import { useUnreadCount } from "@/lib/inbox-queries";
-import { firstTimeHandled, gymOfResponse, onAlertTapped, registerForPush, type NotificationResponse } from "@/lib/push";
+import { liveHref } from "@/lib/live";
+import { firstTimeHandled, gymOfResponse, liveOfResponse, onAlertTapped, registerForPush, type NotificationResponse } from "@/lib/push";
 import { selectGym, session } from "@/lib/session";
 import { ALL_TABS, routesFor, TAB_META, tabsFor } from "@/nav/tabs";
 
@@ -26,14 +27,17 @@ export default function AppTabs() {
     if (slug) void registerForPush({ ask: false });
   }, [slug]);
 
-  // A tapped alert opens the inbox — of its own gym, switching first if needed.
+  // A tapped alert opens the inbox — of its own gym, switching first if needed — or, for an online
+  // session about to start, its call (the server checks the person may join).
   useEffect(() => {
     const open = async (response: NotificationResponse) => {
       if (!firstTimeHandled(response)) return;
       const target = gymOfResponse(response);
       // The payload is untrusted: only switch to a gym this person can actually use.
       if (target && target !== slug && session.getState().gyms.some((g) => g.slug === target && g.appAccess.allowed)) await selectGym(target).catch(() => undefined);
-      router.push("/more/notifications");
+      const live = liveOfResponse(response);
+      if (live) router.push(liveHref(live));
+      else router.push("/more/notifications");
     };
     return onAlertTapped((r) => void open(r));
   }, [router, slug]);

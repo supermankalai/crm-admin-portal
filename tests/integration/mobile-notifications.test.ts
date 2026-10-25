@@ -137,11 +137,14 @@ describe("preferences and push tokens", () => {
   it("offers members member categories and staff the staff ones; ignores the rest", async () => {
     const ana = await login(m.ana.email, "gym-a");
     const p = await callApi<{ available: string[] }>(prefsRoute.GET, { token: ana });
-    expect(p.body.available).toEqual(["classReminders", "waitlist", "membership", "payments", "announcements"]);
+    expect(p.body.available).toEqual(["classReminders", "waitlist", "membership", "payments", "announcements", "training"]);
     const u = await callApi<{ preferences: Record<string, boolean> }>(prefsRoute.PUT, { token: ana, body: { classReminders: false, staffAlerts: false } });
     expect(u.body.preferences).toMatchObject({ classReminders: false, staffAlerts: true });
     const desk = await login(w.users.deskA.email, "gym-a");
+    // Front desk get no personal training alerts, so no switch for them.
     expect((await callApi<{ available: string[] }>(prefsRoute.GET, { token: desk })).body.available).toEqual(["announcements", "staffAlerts"]);
+    const owner = await login(w.users.ownerA.email, "gym-a");
+    expect((await callApi<{ available: string[] }>(prefsRoute.GET, { token: owner })).body.available).toEqual(["announcements", "staffAlerts", "training"]);
     await callApi(prefsRoute.PUT, { token: ana, body: { classReminders: true } });
   });
 
@@ -181,6 +184,21 @@ describe("push delivery", () => {
     expect(JSON.stringify(msg)).not.toMatch(/INV-|Ana|Test|20 Oct/);
 
     expect((await deliverPendingPushes(getOwnerDb(), push)).sent).toBe(0); // never twice
+  });
+
+  it("reaches an Android phone that registered its Firebase token through Firebase", async () => {
+    const db = getOwnerDb();
+    const fcmToken = `fcm${"Xy7_z-9:".repeat(16)}`;
+    const ana = await login(m.ana.email, "gym-a", "Ana's Android");
+    expect((await callApi(pushTokenRoute.POST, { token: ana, body: { token: fcmToken, platform: "android", provider: "fcm" } })).status).toBe(200);
+    expect((await callApi(pushTokenRoute.POST, { token: ana, body: { token: fcmToken, platform: "ios", provider: "fcm" } })).status).toBe(422);
+    expect(await db.pushToken.findFirstOrThrow({ where: { token: fcmToken } })).toMatchObject({ provider: "fcm", platform: "android" });
+    await db.notification.create({ data: { gymId: w.gymA.id, recipientUserId: m.ana.userId, type: "PT_ASSIGNED", title: "You have a personal trainer", body: "Tara is now your personal trainer.", dedupeKey: createId() } });
+    await deliverPendingPushes(getOwnerDb(), push);
+    const sent = push.sent.find((x) => x.to === fcmToken);
+    expect(sent).toMatchObject({ provider: "fcm", title: "Gym A", body: "You have a new personal trainer. Open the app to see who.", data: { type: "PT_ASSIGNED", gymSlug: "gym-a" } });
+    // Expo devices are still told apart.
+    expect(push.sent.filter((x) => x.to.startsWith("ExponentPushToken")).every((x) => x.provider === "expo")).toBe(true);
   });
 
   it("respects preferences, skips signed-out devices and stale news", async () => {

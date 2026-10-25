@@ -126,6 +126,8 @@ export const currentGymSchema = z.object({
   /** Staff permissions (empty for members). The server re-checks every one. */
   permissions: z.array(z.string()),
   access: accessStateSchema,
+  /** Online classes and PT sessions can be booked (the plan includes them and the server is set up). Absent from older servers. */
+  liveSessions: z.boolean().optional(),
 });
 
 export const selectGymResponseSchema = z.object({
@@ -244,6 +246,9 @@ export const memberMembershipResponseSchema = z.object({
 
 export const classesQuerySchema = z.object({ from: dateOnly.optional(), to: dateOnly.optional() });
 
+/** How a class or PT session is delivered (docs/LIVE_SESSIONS.md). */
+export const deliveryModeSchema = z.enum(["IN_PERSON", "ONLINE", "HYBRID"]);
+
 export const memberClassSchema = z.object({
   id: z.string(),
   startsAt: isoDateTime,
@@ -258,6 +263,7 @@ export const memberClassSchema = z.object({
   capacity: z.number().int(),
   booked: z.number().int(),
   waitlisted: z.number().int(),
+  deliveryMode: deliveryModeSchema,
   spotsLeft: z.number().int(),
   my: z.object({ bookingId: z.string(), status: z.enum(["BOOKED", "WAITLISTED", "ATTENDED", "NO_SHOW"]), waitlistPosition: z.number().int().nullable() }).nullable(),
   canBook: z.boolean(),
@@ -554,11 +560,12 @@ export const trainingSessionItemSchema = z.object({
   focus: z.string().nullable(),
   trainer: z.string(),
   member: z.object({ id: z.string(), name: z.string() }),
+  deliveryMode: deliveryModeSchema,
 });
 
 export const scheduleItemSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("class"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, title: z.string(), color: z.string(), room: z.string(), booked: z.number().int(), capacity: z.number().int(), status: z.string() }),
-  z.object({ kind: z.literal("pt"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, member: z.object({ id: z.string(), name: z.string() }), focus: z.string().nullable(), status: z.string() }),
+  z.object({ kind: z.literal("class"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, title: z.string(), color: z.string(), room: z.string(), booked: z.number().int(), capacity: z.number().int(), status: z.string(), deliveryMode: deliveryModeSchema }),
+  z.object({ kind: z.literal("pt"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, member: z.object({ id: z.string(), name: z.string() }), focus: z.string().nullable(), status: z.string(), deliveryMode: deliveryModeSchema }),
   z.object({ kind: z.literal("shift"), id: z.string(), startsAt: isoDateTime, endsAt: isoDateTime, location: z.string() }),
 ]);
 
@@ -631,6 +638,15 @@ export const notificationTypeSchema = z.enum([
   "ANNOUNCEMENT",
   "CLASS_FULL",
   "DELETION_REQUEST",
+  "PT_ASSIGNED",
+  "PT_ENDED",
+  "PT_SESSION_BOOKED",
+  "PT_SESSION_CANCELLED",
+  "PT_SESSION_REMINDER",
+  "PT_CREDITS_LOW",
+  "PT_PACKAGE_EXPIRING",
+  "LIVE_CLASS_STARTING",
+  "LIVE_PT_STARTING",
 ]);
 
 export const notificationIdParamsSchema = z.object({ notificationId: z.string().min(1).max(64) });
@@ -642,6 +658,8 @@ export const notificationItemSchema = z.object({
   body: z.string(),
   /** Where tapping it should go in the app (screen key), if anywhere. */
   target: z.enum(["classes", "membership", "payments", "announcements", "alerts", "members"]).nullable(),
+  /** A live session's call (its "starts soon" alert): open the pre-join screen. */
+  live: z.object({ kind: z.enum(["class", "pt"]), sessionId: z.string() }).nullable(),
   readAt: isoDateTime.nullable(),
   createdAt: isoDateTime,
 });
@@ -656,14 +674,26 @@ export const preferencesSchema = z.object({
   payments: z.boolean(),
   announcements: z.boolean(),
   staffAlerts: z.boolean(),
+  training: z.boolean(),
 });
 export const preferencesResponseSchema = z.object({ preferences: preferencesSchema, available: z.array(preferencesSchema.keyof()) });
 export const updatePreferencesSchema = preferencesSchema.partial();
 
-export const pushTokenRequestSchema = z.object({
-  token: z.string().regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/, "Not an Expo push token"),
-  platform: z.enum(["ios", "android"]),
-});
+/** Expo tokens look like ExponentPushToken[…]; native FCM registration tokens are long URL-safe strings. */
+export const EXPO_PUSH_TOKEN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{10,}\]$/;
+export const FCM_PUSH_TOKEN = /^[A-Za-z0-9_:-]{100,4096}$/;
+
+export const pushTokenRequestSchema = z
+  .object({
+    token: z.string().max(4096),
+    platform: z.enum(["ios", "android"]),
+    /** expo (default): Expo's push service. fcm: Firebase Cloud Messaging directly (Android builds with Firebase). */
+    provider: z.enum(["expo", "fcm"]).default("expo"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.provider === "expo" && !EXPO_PUSH_TOKEN.test(v.token)) ctx.addIssue({ code: "custom", path: ["token"], message: "Not an Expo push token" });
+    if (v.provider === "fcm" && (!FCM_PUSH_TOKEN.test(v.token) || v.platform !== "android")) ctx.addIssue({ code: "custom", path: ["token"], message: "Not an Android FCM token" });
+  });
 
 export const announcementItemSchema = z.object({
   id: z.string(),
@@ -686,3 +716,24 @@ export const memberProfileResponseSchema = z.object({
 
 export const deletionRequestSchema = z.object({ reason: z.string().trim().max(500).transform((v) => (v === "" ? null : v)), confirm: z.literal(true, "Please confirm you understand") });
 export const deletionRequestResponseSchema = z.object({ status: z.literal("REQUESTED"), requestedAt: isoDateTime });
+
+// ─────────────────────────────── Live sessions (LiveKit) ───────────────────────────────
+
+export const liveJoinParamsSchema = z.object({ kind: z.enum(["class", "pt"]), sessionId: z.string().min(1).max(64) });
+/** Connect to `url` with `token` (LiveKit). The token works for this room only, until `expiresAt`. */
+export const liveJoinResponseSchema = z.object({
+  url: z.string(),
+  token: z.string(),
+  roomName: z.string(),
+  identity: z.string(),
+  role: z.enum(["host", "coach", "member"]),
+  expiresAt: isoDateTime,
+  session: z.object({
+    kind: z.enum(["class", "pt"]),
+    id: z.string(),
+    title: z.string(),
+    startsAt: isoDateTime,
+    endsAt: isoDateTime,
+    deliveryMode: z.enum(["IN_PERSON", "ONLINE", "HYBRID"]),
+  }),
+});

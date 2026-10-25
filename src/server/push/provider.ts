@@ -4,15 +4,20 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEnv } from "@/server/env";
 import { logger } from "@/server/logger";
+import { FcmPush, loadServiceAccount } from "./fcm";
 
 /**
- * Push delivery behind an interface, like email and SMS. `expo` talks to Expo's push service
- * (which forwards to Apple and Google); `dev-outbox` writes each push to .dev-outbox/*.push.json
- * so you can see exactly what would have appeared on a lock screen. Tokens are never logged.
+ * Push delivery behind an interface, like email and SMS. Each device is reached one of two ways:
+ * an Expo token through Expo's push service (which forwards to Apple and Google), or an Android
+ * device's native Firebase token straight through Firebase Cloud Messaging (./fcm). `live` routes
+ * every message to the right one; `dev-outbox` writes each push to .dev-outbox/*.push.json so you
+ * can see exactly what would have appeared on a lock screen. Tokens are never logged.
  */
 
 export type PushMessage = {
   to: string;
+  /** Which service the token belongs to. */
+  provider: "expo" | "fcm";
   title: string;
   body: string;
   data: Record<string, string>;
@@ -50,7 +55,7 @@ class ExpoPush implements PushProvider {
     const res = await fetch("https://exp.host/--/api/v2/push/send", {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify(messages.map((m) => ({ ...m, sound: "default", priority: "high", channelId: "default" }))),
+      body: JSON.stringify(messages.map((m) => ({ to: m.to, title: m.title, body: m.body, data: m.data, sound: "default", priority: "high", channelId: "default" }))),
       signal: AbortSignal.timeout(15_000),
     });
     const json = (await res.json().catch(() => ({}))) as { data?: { status: string; id?: string; details?: { error?: string }; message?: string }[]; errors?: { code?: string }[] };
@@ -86,7 +91,7 @@ class DevOutboxPush implements PushProvider {
     for (const m of messages) {
       const id = `dev-${randomUUID()}`;
       const file = path.join(this.dir, `${new Date().toISOString().replace(/[:.]/g, "-")}-${id.slice(4, 12)}.push.json`);
-      await writeFile(file, `${JSON.stringify({ to: maskToken(m.to), title: m.title, body: m.body, data: m.data }, null, 2)}\n`, "utf8");
+      await writeFile(file, `${JSON.stringify({ via: m.provider, to: maskToken(m.to), title: m.title, body: m.body, data: m.data }, null, 2)}\n`, "utf8");
       tickets.push({ status: "ok", id });
     }
     logger.info("push written to dev outbox", { count: messages.length });
@@ -98,9 +103,48 @@ class DevOutboxPush implements PushProvider {
   }
 }
 
+/**
+ * Sends each message through its token's own service, keeping the results in order. Firebase
+ * tickets are prefixed "fcm:" (see ./fcm), so receipts are asked of the right service too.
+ */
+export class RoutingPush implements PushProvider {
+  constructor(
+    private readonly expo: PushProvider,
+    private readonly fcm: PushProvider | null
+  ) {}
+
+  async send(messages: PushMessage[]): Promise<PushTicket[]> {
+    const tickets: PushTicket[] = new Array(messages.length);
+    const groups = { expo: [] as number[], fcm: [] as number[] };
+    messages.forEach((m, i) => groups[m.provider].push(i));
+    for (const kind of ["expo", "fcm"] as const) {
+      const idx = groups[kind];
+      if (!idx.length) continue;
+      const service = kind === "expo" ? this.expo : this.fcm;
+      if (!service) {
+        logger.warn("push skipped: Firebase isn't configured (FIREBASE_SERVICE_ACCOUNT_FILE)", { count: idx.length });
+        idx.forEach((i) => (tickets[i] = { status: "error", error: "FcmNotConfigured" }));
+        continue;
+      }
+      const out = await service.send(idx.map((i) => messages[i]));
+      idx.forEach((i, j) => (tickets[i] = out[j] ?? { status: "error", error: "NoTicket" }));
+    }
+    return tickets;
+  }
+
+  async receipts(ticketIds: string[]): Promise<Record<string, PushReceipt>> {
+    const fcmIds = ticketIds.filter((id) => id.startsWith("fcm:"));
+    const expoIds = ticketIds.filter((id) => !id.startsWith("fcm:"));
+    const fromFcm = fcmIds.length && this.fcm ? await this.fcm.receipts(fcmIds) : Object.fromEntries(fcmIds.map((id) => [id, { status: "ok" as const }]));
+    return { ...(expoIds.length ? await this.expo.receipts(expoIds) : {}), ...fromFcm };
+  }
+}
+
 let provider: PushProvider | undefined;
 export function getPushProvider(): PushProvider {
+  if (provider) return provider;
   const env = getEnv();
-  provider ??= env.PUSH_PROVIDER === "expo" ? new ExpoPush(env.EXPO_ACCESS_TOKEN) : new DevOutboxPush(path.resolve(".dev-outbox"));
-  return provider;
+  if (env.PUSH_PROVIDER === "dev-outbox") return (provider = new DevOutboxPush(path.resolve(".dev-outbox")));
+  const fcm = env.FIREBASE_SERVICE_ACCOUNT_FILE ? new FcmPush(loadServiceAccount(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_FILE))) : null;
+  return (provider = new RoutingPush(new ExpoPush(env.EXPO_ACCESS_TOKEN), fcm));
 }
